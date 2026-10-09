@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "maxEnvironments": 20,
+  "maxRunsPerDay": 5,
+  "maxApprovers": 10,
+  "receiptAttempts": 30
+}

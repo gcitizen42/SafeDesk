@@ -1,0 +1,10 @@
+{
+  "ownerToReplace": "0x9C20993E98aa5A6BAD8AD0FC42C2f4cc3008096f",
+  "newOwners": [
+    "0x0000000000000000000000000000000000000000"
+  ],
+  "newThresholdByDefault": null,
+  "newThresholdBySafe": {
+  },
+  "notes": "Replace newOwners with the complete final signer set for every Safe. safe-owner-manager expects the desired final owner list, not only the added signer."
+}

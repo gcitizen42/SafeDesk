@@ -1,0 +1,31 @@
+{
+  "expectedOwners": [
+    "0xFe45baf0F18c207152A807c1b05926583CFE2e4b",
+    "0x49848f38D31e2b150190E44a4fE056a239EA1aad",
+    "0x09BA3869189E78814659a611e7eFe36BED25cE94",
+    "0x3c7832b15407D1BD8aE03C41D2A849006A0cD905",
+    "0x452db6Ab19af268aE6Dc981fb7cd6077c124923f",
+    "0x76C6CEf8ae443fA7404dD60dabc18B9158e37A75",
+    "0x9C20993E98aa5A6BAD8AD0FC42C2f4cc3008096f",
+    "0xeceC507477b969FC05053fB044619b723D458E8e",
+    "0x1778f7EC9eE1d6Cc72FA4e94189CfeF0DAd48b4A"
+  ],
+  "safes": [
+    { "chainId": 1, "service": "eth", "chain": "Ethereum", "label": "Council", "address": "0x9F6e831c8F8939DC0C830C6e492e7cEf4f9C2F5f", "expectedThreshold": 6 },
+    { "chainId": 1, "service": "eth", "chain": "Ethereum", "label": "Treasury", "address": "0x71E47a4429d35827e0312AA13162197C23287546", "expectedThreshold": 5 },
+    { "chainId": 42161, "service": "arb1", "chain": "Arbitrum", "label": "Council", "address": "0x9F6e831c8F8939DC0C830C6e492e7cEf4f9C2F5f", "expectedThreshold": 6 },
+    { "chainId": 137, "service": "pol", "chain": "Polygon", "label": "Council", "address": "0x9F6e831c8F8939DC0C830C6e492e7cEf4f9C2F5f", "expectedThreshold": 6 },
+    { "chainId": 8453, "service": "base", "chain": "Base", "label": "Council", "address": "0x518385dd31289F1000fE6382b0C65df4d1Cd3bfC", "expectedThreshold": 6 },
+    { "chainId": 10, "service": "oeth", "chain": "Optimism", "label": "Council", "address": "0x7fB50BBabeDEE52b8760Ba15c0c199aF33Fc2EfA", "expectedThreshold": 6 },
+    { "chainId": 1, "service": "eth", "chain": "Ethereum", "label": "MG", "address": "0xd55c4261145EA1752662faA0485AfBC8C431b0CA", "expectedThreshold": 5 },
+    { "chainId": 1, "service": "eth", "chain": "Ethereum", "label": "IG", "address": "0x2ff7aB212cD6FEaE21bAc5300465E149FB6b85a9", "expectedThreshold": 5 },
+    { "chainId": 1, "service": "eth", "chain": "Ethereum", "label": "Foundation", "address": "0xf642Bd6A9F76294d86E99c2071cFE2Aa3B61fBDa", "expectedThreshold": 6 },
+    { "chainId": 42161, "service": "arb1", "chain": "Arbitrum", "label": "TTG", "address": "0x6c2bd894bD166DCF053045a4883Db49EAE3FC01C", "expectedThreshold": 5 },
+    { "chainId": 42161, "service": "arb1", "chain": "Arbitrum", "label": "IG", "address": "0xaaF0AC818c611CE4839F9Dff44338D1FDCd14FE9", "expectedThreshold": 5 },
+    { "chainId": 10, "service": "oeth", "chain": "Optimism", "label": "TTG", "address": "0x126940ea97b328E57E9e2285D546a677b2f38300", "expectedThreshold": 5 },
+    { "chainId": 137, "service": "pol", "chain": "Polygon", "label": "TTG", "address": "0xc3Bf49eBA094AF346830dF4dbB42a07dE378EeB6", "expectedThreshold": 5 },
+    { "chainId": 137, "service": "pol", "chain": "Polygon", "label": "MG", "address": "0xe663AD6295d47ce33F9b65950761Ecba6654E5E8", "expectedThreshold": 5 },
+    { "chainId": 137, "service": "pol", "chain": "Polygon", "label": "IG", "address": "0x5bD70E385414C8dCC25305AeB7E542d8FC70e667", "expectedThreshold": 5 },
+    { "chainId": 8453, "service": "base", "chain": "Base", "label": "TTG", "address": "0x3b8f79458b6d303B47D56734B00CC6941443bd95", "expectedThreshold": 5 }
+  ]
+}

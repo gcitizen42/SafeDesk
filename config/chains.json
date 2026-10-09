@@ -1,0 +1,50 @@
+[
+  {
+    "chainId": 1,
+    "name": "Ethereum Mainnet",
+    "shortName": "eth",
+    "transactionServiceUrl": "https://safe-transaction-mainnet.safe.global"
+  },
+  {
+    "chainId": 42161,
+    "name": "Arbitrum One",
+    "shortName": "arb1",
+    "transactionServiceUrl": "https://safe-transaction-arbitrum.safe.global"
+  },
+  {
+    "chainId": 10,
+    "name": "Optimism",
+    "shortName": "oeth",
+    "transactionServiceUrl": "https://safe-transaction-optimism.safe.global"
+  },
+  {
+    "chainId": 137,
+    "name": "Polygon",
+    "shortName": "matic",
+    "transactionServiceUrl": "https://safe-transaction-polygon.safe.global"
+  },
+  {
+    "chainId": 8453,
+    "name": "Base",
+    "shortName": "base",
+    "transactionServiceUrl": "https://safe-transaction-base.safe.global"
+  },
+  {
+    "chainId": 100,
+    "name": "Gnosis Chain",
+    "shortName": "gno",
+    "transactionServiceUrl": "https://safe-transaction-gnosis-chain.safe.global"
+  },
+  {
+    "chainId": 56,
+    "name": "BNB Smart Chain",
+    "shortName": "bnb",
+    "transactionServiceUrl": "https://safe-transaction-bsc.safe.global"
+  },
+  {
+    "chainId": 43114,
+    "name": "Avalanche C-Chain",
+    "shortName": "avax",
+    "transactionServiceUrl": "https://safe-transaction-avalanche.safe.global"
+  }
+]

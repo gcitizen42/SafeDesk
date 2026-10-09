@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Safe proposal desk</title><link rel="stylesheet" href="/dashboard.css"></head>
+<body>
+<header><div><h1>Safe proposal desk</h1><span id="batchCount"></span></div><button id="connect"><i data-lucide="wallet"></i><span>Connect Ledger wallet</span></button></header>
+<main>
+ <section class="toolbar"><div class="tools"><button id="add"><i data-lucide="plus"></i>Add Safe</button><button id="import"><i data-lucide="upload"></i>Import collection</button><button id="export"><i data-lucide="download"></i>Export collection</button></div><button id="review" class="primary"><i data-lucide="send"></i>Review proposals <span id="selectedCount"></span></button></section>
+ <div id="status" role="status" aria-live="polite">Loading prepared operations...</div>
+ <section class="workspace">
+  <aside><div class="aside-title">Prepared operations <button id="refresh" class="icon" title="Reload batch" aria-label="Reload batch"><i data-lucide="refresh-cw"></i></button></div><div id="operations"></div></aside>
+  <section class="detail" id="detail"><p>Select a Safe.</p></section>
+ </section>
+</main>
+<dialog id="addDialog"><form id="addForm"><h2>Add prepared Safe transaction</h2><label>Operation name<input name="id" required pattern="[a-z0-9][a-z0-9-]{0,63}" placeholder="treasury-ethereum"></label><label>Signing data JSON<input name="file" type="file" accept="application/json,.json" required></label><div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary">Add Safe</button></div></form></dialog>
+<dialog id="simulationDialog"><form id="simulationForm"><h2>Simulation</h2><label>Tenderly link<input name="url" type="url" placeholder="https://dashboard.tenderly.co/..."></label><label>Execution result JSON<input name="file" type="file" accept="application/json,.json"></label><div id="simulationNote" class="note"></div><div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary">Attach result</button></div></form></dialog>
+<dialog id="tenderlyDialog"><h2>Create Tenderly simulation</h2><div id="tenderlyPlan"></div><label class="checkbox-label"><input id="publicExplorer" type="checkbox">Public explorer</label><p class="note">Creates one isolated environment and consumes Tenderly account resources. Owner approvals are assumed on the fork; no real signatures or onchain transactions are sent. Public explorer exposes simulated addresses and calldata.</p><div class="dialog-actions"><button data-close>Cancel</button><button id="runTenderly" class="primary"><i data-lucide="flask-conical"></i>Create and simulate</button></div></dialog>
+<dialog id="pasteDialog"><form id="pasteForm"><h2>Collect signature</h2><label>Current owner address<input name="sender" required placeholder="0x..."></label><label>65-byte signature<textarea name="signature" required spellcheck="false"></textarea></label><div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary">Verify and collect</button></div></form></dialog>
+<dialog id="reviewDialog"><h2>Propose selected transactions</h2><div id="reviewList"></div><p class="note">These signatures will be published to each Safe's transaction service. Owners can then review and approve the proposals in Safe.</p><div class="dialog-actions"><button data-close>Back</button><button id="propose" class="primary"><i data-lucide="send"></i>Propose selected</button></div></dialog>
+<input id="collectionFile" type="file" accept="application/json,.json" hidden>
+<script src="/lucide.js"></script><script type="module" src="/dashboard.mjs"></script>
+</body></html>

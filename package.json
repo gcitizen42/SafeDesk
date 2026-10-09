@@ -1,0 +1,26 @@
+{
+  "name": "tdao-signerrotation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Threshold DAO Safe signer rotation discovery and transaction-builder JSON preparation.",
+  "scripts": {
+    "test": "node --test scripts/safe-batch/*.test.mjs",
+    "batch": "node scripts/safe-batch/cli.mjs",
+    "balances": "node scripts/audit-safe-balances.mjs",
+    "discover": "node scripts/discover-safes.mjs",
+    "generate": "node scripts/generate-rotation-json.mjs",
+    "prepare-proposal": "node scripts/prepare-safe-service-proposal.mjs",
+    "simulate-prepared": "python3 scripts/simulate-prepared-safe-vnet.py",
+    "rotation": "node scripts/rotation-shortcut.mjs",
+    "remaining": "node scripts/remaining-rotations.mjs"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4",
+    "lucide": "^1.54.0",
+    "safe-owner-manager": "^1.0.4"
+  },
+  "overrides": {
+    "ws": "8.21.0"
+  }
+}
