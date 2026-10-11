@@ -1,0 +1,8 @@
+// Cloudflare Workers Builds (SPEC §12): serves the static build. PR branches deploy with
+// `npx wrangler preview`, which needs the `previews` block (it can stay empty).
+{
+  "name": "plainsafe",
+  "compatibility_date": "2026-09-26",
+  "assets": { "directory": "./dist" },
+  "previews": {}
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": ["**", "!**/dist", "!**/src/generated", "!**/docs/planning"]
+  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "semicolons": "asNeeded", "trailingCommas": "all" }
+  },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "noRestrictedGlobals": {
+          "level": "error",
+          "options": {
+            "deniedGlobals": {
+              "localStorage": "Not allowed: persistent data goes through the IndexedDB Storage service (SPEC §9.5).",
+              "sessionStorage": "Not allowed: persistent data goes through the IndexedDB Storage service (SPEC §9.5).",
+              "indexedDB": "Only src/storage/ may touch indexedDB (SPEC §9.5). Use the Storage service."
+            }
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/storage/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "localStorage": "Not allowed: persistent data goes through the IndexedDB Storage service (SPEC §9.5).",
+                  "sessionStorage": "Not allowed: persistent data goes through the IndexedDB Storage service (SPEC §9.5)."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

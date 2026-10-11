@@ -1,17 +1,28 @@
 # SafeDesk
 
-SafeDesk is a local workspace for managing Safe multisig owner rotations across Ethereum, Arbitrum, Optimism, Polygon, Base and BOB. Configure RPCs, load a Safe's current owners, choose the complete final owner list and threshold, simulate, collect Ledger signatures and publish reviewed proposals. Rotation calls use [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager).
+SafeDesk is a local workspace with two separate tabs:
 
-The live transaction panel shows the current nonce, verified published approvals, locally collected signatures, conflicts, and the connected wallet's ability to sign. With enough usable signatures, it can perform a read-only execution and gas check. **It does not broadcast an execution:** use the Safe link to execute separately after review.
+- **Safe Management**, powered by a pinned MIT-licensed copy of [PlainSafe](https://github.com/gskril/plainsafe): configure RPCs, inspect Safes, build/review transaction packages and share EIP-712 signatures without the Safe Transaction Service. Starts read-only.
+- **Rotations & Simulations**, our existing multichain workflow: choose owners/thresholds, generate calls using [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager), simulate with Tenderly, collect Ledger signatures and publish reviewed proposals.
+
+The tabs run on separate local origins. They do not automatically share credentials, private collections or browser storage. **PlainSafe is unaudited; local hosting is not a security certification.** Read the [integration and safety guide](apps/plainsafe/SAFEDESK.md) before enabling management wallet actions.
+
+The rotations tab's live panel shows nonce, verified published approvals, local signatures, conflicts and wallet readiness. Its execution/gas check is read-only; use Safe to execute separately. The management tab can sign/execute only when explicitly enabled at launch and confirmed in the wallet. It is not a private relay and must not be used for the Republic incident operation.
 
 ## Quick Start
 
 ```bash
 npm ci --ignore-scripts
+npm run setup:manager
+npm run build:manager
 npm start
 ```
 
-Open [SafeDesk](http://127.0.0.1:8770/) in a wallet-enabled browser. A fresh installation opens the setup wizard automatically:
+Requires Node 22.12+ and npm. Setup obtains pinned Bun through npm without a global installation. Builds use the committed lockfile; serving downloads no code.
+
+Open [Safe Management](http://127.0.0.1:8772/) or [Rotations & Simulations](http://127.0.0.1:8770/) in a wallet-enabled browser. Management has its own RPC/Safe setup and starts read-only. The tabs are navigation links, not iframes. Existing rotation files and collected signatures remain unchanged.
+
+On a fresh rotation batch, its wizard asks you to:
 
 1. Choose a network and public RPC from the Chainlist catalogue, or enter a custom HTTPS endpoint. SafeDesk verifies its chain ID.
 2. Load the first Safe and review its current owners, threshold and nonce.
@@ -19,7 +30,9 @@ Open [SafeDesk](http://127.0.0.1:8770/) in a wallet-enabled browser. A fresh ins
 4. Optionally configure Tenderly account, project and access key.
 5. Review and prepare the rotation. Simulate before signing, then add further Safes as needed.
 
-Custom RPCs and Tenderly keys stay in ignored local environment files. Existing operations and collected signatures are preserved. The historical folder name stays `tDAO-signerrotation` for compatibility; the application and package are named SafeDesk.
+Rotation RPCs and Tenderly keys stay in ignored local environment files. Management settings, including RPC URLs, stay unencrypted in browser IndexedDB and may be included in private backups. Do not share keyed RPC backups or signature collections publicly. The historical folder name stays `tDAO-signerrotation` for compatibility.
+
+Keep the previous rotation-only server with `npm run start:rotations`. CLI commands still work. Management's local queue does not mirror Safe service proposals and cannot import our earlier `eth_sign` Ledger signatures. See its guide for limitations and the explicit `--enable-wallet-actions` option.
 
 See the [operator guide](scripts/safe-batch/README.md) for the wizard, CLI equivalents, private configuration, simulation and proposal safeguards. The older discovery/audit tools below remain available.
 
@@ -42,7 +55,7 @@ Open http://127.0.0.1:8770/ in your Ledger/MetaMask browser. CLI users can use `
 
 The **Simulate on Tenderly** button previews one new virtual environment before confirmation, simulates assumed approvals and the exact Safe execution, then attaches the checked result. CLI equivalent: `npm run batch -- simulate ID`. Credentials stay in ignored environment files, and capacity/daily limits prevent unbounded creation.
 
-For a fresh Git checkout, `npm start` initializes an empty batch and opens the wizard. Operations, credentials and signature collections are deliberately excluded from Git; importing complete prepared signing data and choosing your own `--root` batch are also supported.
+After management setup/build, `npm start` starts both local origins and initializes an empty rotation batch if needed. Operations, credentials and signature collections are deliberately excluded from Git; prepared signing-data import and a custom `--root` batch are supported.
 
 The default batch contains the five outstanding preparations from 9 October 2026. Drafts remain blocked. Publishing a proposal is separate from executing it, and signatures must not be reused across Safes or chains.
 

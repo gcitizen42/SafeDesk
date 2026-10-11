@@ -7,7 +7,8 @@ import {TenderlyRunner} from './tenderly.mjs';
 import {ChainCatalog,SafeWorkflow} from './workflow.mjs';
 import {publicSettings} from './settings.mjs';
 const here=import.meta.dirname,project=path.resolve(here,'../..');
-export function createServer(root,{store=new BatchStore(root),port=8770,runner=new TenderlyRunner(store),workflow=new SafeWorkflow(store),catalog=new ChainCatalog()}={}){
+export function createServer(root,{store=new BatchStore(root),port=8770,managerPort=8772,runner=new TenderlyRunner(store),workflow=new SafeWorkflow(store),catalog=new ChainCatalog()}={}){
+ if(!Number.isInteger(Number(managerPort))||Number(managerPort)<1||Number(managerPort)>65535)throw Error('Invalid manager port');
  store.init();
  const token=randomBytes(32).toString('hex'),reviews=new Map(),simulationPlans=new Map();let busy=false;
  const origins=new Set([`http://127.0.0.1:${port}`,`http://localhost:${port}`]);
@@ -68,7 +69,8 @@ export function createServer(root,{store=new BatchStore(root),port=8770,runner=n
    if(!file){const match=url.pathname.match(/^\/([a-z0-9-]+)\/(ledger-sign-safe-tx\.html|safe-custom-data-params\.json|current-owners\.json)$/);if(match&&store.ids().includes(match[1]))file=path.join(root,match[1],match[2]);}
    if(!file)return send(res,404,{error:'Not found'});
    const type=file.endsWith('.html')?'text/html; charset=utf-8':file.endsWith('.mjs')||file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'application/json';
-   res.writeHead(200,{'content-type':type,'cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY'});res.end(fs.readFileSync(file));
+   const contents=fs.readFileSync(file);const output=publicFiles[url.pathname]==='dashboard.html'?contents.toString().replace('id="managementTab" href="http://127.0.0.1:8772/"',`id="managementTab" href="http://127.0.0.1:${managerPort}/"`):contents;
+   res.writeHead(200,{'content-type':type,'cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY'});res.end(output);
   }catch(e){send(res,400,{error:e.message});}
  });
 }

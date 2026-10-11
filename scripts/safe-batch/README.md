@@ -1,5 +1,12 @@
 # SafeDesk Operator Guide
 
+This guide describes **Rotations & Simulations**, the second SafeDesk tab.
+`npm start` starts it alongside isolated **Safe Management** after
+`npm run setup:manager` and `npm run build:manager`. The original server
+remains available via `npm run start:rotations` or `npm run batch -- serve`.
+See [the management guide](../../apps/plainsafe/SAFEDESK.md) for its read-only
+mode and signature/queue limitations. Existing collections are not migrated.
+
 Prepare owner rotations, monitor Safe transaction readiness, collect Ledger signatures across chains, then publish selected proposals to their chain-specific Safe transaction services. Browser and CLI share the same local collection. No private key is required or stored.
 
 **Propose is not execute.** Publication exposes the signatures to the Safe service. Actual onchain execution remains a separate action after each Safe's approval threshold is met. Publishing several proposals is sequential, not one atomic multichain transaction.
@@ -11,7 +18,7 @@ Requires Node.js 22 or newer and this project's installed dependencies.
 ```bash
 cd /Users/Citizen42/Desktop/TdaoUtils/AI-ops/tDAO-signerrotation
 npm ci --ignore-scripts
-npm start
+npm run start:rotations
 ```
 
 Open http://127.0.0.1:8770/ in Chrome or Brave with MetaMask and your Ledger account. The Codex in-app browser can show the desk but may not expose your wallet extension. The server listens only on localhost. If 8770 is already running, use that instance, or choose `serve --port 8771`.

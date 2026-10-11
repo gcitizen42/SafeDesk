@@ -1,0 +1,4 @@
+[install]
+# Only install package versions published at least 2 days ago (seconds). SPEC §16.
+# Exceptions go in minimumReleaseAgeExcludes, each with a comment explaining why.
+minimumReleaseAge = 172800

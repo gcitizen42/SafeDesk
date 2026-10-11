@@ -1,0 +1,74 @@
+# Release to IPFS (SPEC §12): on a v* tag, build reproducibly, compute the CID ourselves, check
+# that omnipin gets the same one, upload it to SimplePage, and attach the CID, dist.zip and the
+# runtime dependency list to the GitHub release. It can also be run by hand; the GitHub release is
+# only made when it runs on a tag. See RELEASE.md.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # A fixed image, not ubuntu-latest, so the build environment only changes when we change it.
+    runs-on: ubuntu-24.04
+    env:
+      OMNIPIN_VERSION: 3.1.3
+      # SimplePage's "token" is the ENS name whose subscription pays for the pin. It is public, so
+      # it is not a secret.
+      OMNIPIN_SIMPLEPAGE_TOKEN: plainsafe.eth
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.11
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Check
+        run: bun run lint && bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Compute the CID
+        id: cid
+        run: echo "cid=$(bun run --silent cid dist)" >> "$GITHUB_OUTPUT"
+
+      - name: omnipin must get the same CID
+        run: |
+          theirs="$(bunx omnipin@${OMNIPIN_VERSION} pack dist --only-hash | tail -n 1)"
+          echo "ours:    ${{ steps.cid.outputs.cid }}"
+          echo "omnipin: ${theirs}"
+          test "${theirs}" = "${{ steps.cid.outputs.cid }}"
+
+      # SimplePage only; this never touches ENS (omnipin sets a contenthash only with --ens).
+      - name: Upload to SimplePage with omnipin
+        run: bunx omnipin@${OMNIPIN_VERSION} deploy dist --strict
+
+      - name: Summary
+        run: |
+          echo "IPFS CID: \`${{ steps.cid.outputs.cid }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Release files
+        if: github.ref_type == 'tag'
+        run: |
+          (cd dist && zip -X -r ../dist.zip .)
+          bun pm ls > dependencies.txt
+          echo "${{ steps.cid.outputs.cid }}" > CID.txt
+
+      - name: GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist.zip dependencies.txt CID.txt \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "IPFS CID: \`${{ steps.cid.outputs.cid }}\`
+
+          Open it at https://${{ steps.cid.outputs.cid }}.ipfs.dweb.link/ (a subdomain gateway), or run it locally with \`bunx serve dist\` from dist.zip. How to check the CID yourself: RELEASE.md."

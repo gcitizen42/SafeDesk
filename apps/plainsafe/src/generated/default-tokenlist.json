@@ -1,0 +1,15 @@
+{
+  "name": "Plain Safe built-in",
+  "note": "A small bundled list so the first run isn't empty (SPEC §10). Symbols and decimals checked onchain on 2026-09-25.",
+  "tokens": [
+    { "chainId": 1, "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "symbol": "WETH", "name": "Wrapped Ether", "decimals": 18 },
+    { "chainId": 1, "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "symbol": "USDC", "name": "USD Coin", "decimals": 6 },
+    { "chainId": 1, "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "symbol": "USDT", "name": "Tether USD", "decimals": 6 },
+    { "chainId": 1, "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F", "symbol": "DAI", "name": "Dai Stablecoin", "decimals": 18 },
+    { "chainId": 1, "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0", "symbol": "wstETH", "name": "Wrapped liquid staked Ether 2.0", "decimals": 18 },
+    { "chainId": 11155111, "address": "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9", "symbol": "WETH", "name": "Wrapped Ether", "decimals": 18 },
+    { "chainId": 11155111, "address": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", "symbol": "USDC", "name": "USDC", "decimals": 6 },
+    { "chainId": 11155111, "address": "0x08210F9170F89Ab7658F0B5E3fF39b0E03C594D4", "symbol": "EURC", "name": "EURC", "decimals": 6 },
+    { "chainId": 11155111, "address": "0x779877A7B0D9E8603169DdbD7836e478b4624789", "symbol": "LINK", "name": "ChainLink Token", "decimals": 18 }
+  ]
+}

@@ -1,7 +1,8 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SafeDesk</title><link rel="stylesheet" href="/dashboard.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SafeDesk | Rotations &amp; Simulations</title><link rel="stylesheet" href="/dashboard.css"></head>
 <body>
 <header><div class="brand"><i data-lucide="shield-check" aria-hidden="true"></i><div><h1>SafeDesk</h1><span id="batchCount"></span></div></div><div class="tools"><button id="settings" class="icon" title="Network and Tenderly settings" aria-label="Network and Tenderly settings"><i data-lucide="settings"></i></button><button id="connect"><i data-lucide="wallet"></i><span>Connect Ledger wallet</span></button></div></header>
+<nav class="desk-tabs" aria-label="SafeDesk workspace"><a id="managementTab" href="http://127.0.0.1:8772/" rel="noreferrer"><i data-lucide="shield-check" aria-hidden="true"></i>Safe Management</a><a href="/" aria-current="page"><i data-lucide="users" aria-hidden="true"></i>Rotations &amp; Simulations</a></nav>
 <main>
  <section class="toolbar" id="batchToolbar"><div class="tools"><button id="add"><i data-lucide="plus"></i>Add Safe</button><button id="preparedImport"><i data-lucide="file-up"></i>Import transaction</button><button id="import"><i data-lucide="upload"></i>Import collection</button><button id="export"><i data-lucide="download"></i>Export collection</button></div><button id="review" class="primary"><i data-lucide="send"></i>Review proposals <span id="selectedCount"></span></button></section>
  <div id="status" role="status" aria-live="polite">Loading prepared operations...</div>

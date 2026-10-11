@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Plain Safe project cover">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0a0c0f"/><stop offset="1" stop-color="#171d24"/></linearGradient>
+    <linearGradient id="line" x1="0" x2="1"><stop stop-color="#65d9a3"/><stop offset="1" stop-color="#a7e9c7"/></linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="1120" cy="40" r="330" fill="#65d9a3" opacity=".035"/>
+  <circle cx="1000" cy="630" r="320" fill="#65d9a3" opacity=".025"/>
+  <g transform="translate(76 74)">
+    <rect width="74" height="74" rx="18" fill="#171717" stroke="#3a424b"/>
+    <text x="37" y="48" fill="#ffffff" font-family="system-ui" font-size="31" font-weight="700" text-anchor="middle">PS</text>
+    <text x="96" y="51" fill="#f5f7fa" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="43">Plain Safe</text>
+  </g>
+  <text x="76" y="285" fill="#f5f7fa" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="72">Your Safe.</text>
+  <text x="76" y="369" fill="#f5f7fa" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="72">Your RPC.</text>
+  <text x="76" y="453" fill="url(#line)" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="72">Your call.</text>
+  <text x="80" y="523" fill="#aeb8c3" font-family="Arial,Helvetica,sans-serif" font-size="26">A local-first interface for Safe multisigs</text>
+  <g font-family="Arial,Helvetica,sans-serif" font-size="19" font-weight="600">
+    <rect x="76" y="580" width="312" height="55" rx="27" fill="#1c3028" stroke="#376e54"/>
+    <circle cx="104" cy="607" r="7" fill="#65d9a3"/>
+    <text x="125" y="614" fill="#baf1d2">No backend or analytics</text>
+  </g>
+  <g transform="translate(756 164)" font-family="Arial,Helvetica,sans-serif">
+    <rect width="436" height="420" rx="26" fill="#12171c" stroke="#34404a" stroke-width="2"/>
+    <text x="32" y="55" fill="#e9edf0" font-size="26" font-weight="700">Review before signing</text>
+    <rect x="32" y="82" width="372" height="65" rx="14" fill="#123126" stroke="#285e45"/>
+    <circle cx="60" cy="115" r="12" fill="#65d9a3"/>
+    <path d="m54 115 5 5 9-11" fill="none" stroke="#092419" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="84" y="122" fill="#baf1d2" font-size="20" font-weight="600">Verified Safe</text>
+    <text x="32" y="190" fill="#9daab5" font-size="17">TRANSACTION</text>
+    <text x="32" y="224" fill="#edf2f5" font-size="23">Build  →  Verify  →  Sign</text>
+    <line x1="32" x2="404" y1="252" y2="252" stroke="#34404a"/>
+    <text x="32" y="289" fill="#9daab5" font-size="17">INDEPENDENT CHECKS</text>
+    <text x="32" y="321" fill="#edf2f5" font-size="19">Code hashes  ·  simulation</text>
+    <text x="32" y="353" fill="#edf2f5" font-size="19">Calldata  ·  EIP-712 hashes</text>
+    <text x="32" y="392" fill="#65d9a3" font-size="17">Only your chosen RPC by default</text>
+  </g>
+</svg>
