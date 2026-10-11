@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {ethers} from 'ethers';
 import {safeTxTypes} from '../prepare-safe-service-proposal.mjs';
+import {rpcFor} from './settings.mjs';
 
 export const CHAINS={
  1:{name:'Ethereum',short:'eth',rpc:'https://ethereum.publicnode.com',service:'https://safe-transaction-mainnet.safe.global',explorer:'https://etherscan.io'},
@@ -14,7 +15,8 @@ export const CHAINS={
 export const SAFE_ABI=new ethers.Interface([
  'function getOwners() view returns(address[])','function getThreshold() view returns(uint256)','function nonce() view returns(uint256)',
  'function getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256) view returns(bytes32)',
- 'function execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes) returns(bool)'
+ 'function execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes) returns(bool)',
+ 'function approvedHashes(address,bytes32) view returns(uint256)'
 ]);
 const FIELDS=['to','value','data','operation','safeTxGas','baseGas','gasPrice','gasToken','refundReceiver','nonce'];
 export const safeId=id=>{if(!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id))throw Error('Invalid operation name');return id;};
@@ -77,7 +79,8 @@ export class BatchStore{
   finally{this.locked=false;fs.closeSync(fd);fs.unlinkSync(file);}
  }
  save(){const file=path.join(this.secretDir,'batch-state.json'),temp=file+'.tmp';fs.writeFileSync(temp,JSON.stringify(this.state,null,2),{mode:0o600});fs.renameSync(temp,file);fs.chmodSync(file,0o600);}
- ids(){const b=read(path.join(this.root,'batch.json'));return b.operations.filter(x=>!x.error).map(x=>safeId(x.id));}
+ init(){const file=path.join(this.root,'batch.json');if(!fs.existsSync(file))fs.writeFileSync(file,JSON.stringify({version:1,operations:[]},null,2),{flag:'wx'});}
+ ids(){const b=optional(path.join(this.root,'batch.json'))||{operations:[]};return b.operations.filter(x=>!x.error).map(x=>safeId(x.id));}
  operation(id){
   safeId(id);if(!this.ids().includes(id))throw Error('Unknown operation');
   const dir=path.join(this.root,id),op=read(path.join(dir,'operation.json')),signing=normalizeSigning(read(path.join(dir,'signing-data.json'))),before=read(path.join(dir,'current-owners.json'));
@@ -86,12 +89,12 @@ export class BatchStore{
   if(local?.status==='PASSED'){simulation=simulationMatch(local,signing);simulation.source='Local fork';}
   const attached=this.state.simulations[id];if(attached?.hash===signing.safeTxHash&&attached.match)simulation={...attached.match,source:'Imported result',url:attached.url};
   if(attached?.hash===signing.safeTxHash&&attached.failed)simulation=null;
-  return{...op,id,name:CHAINS[op.chainId].name,signing,before,simulation,simulationUrl:attached?.url||'',rpc:CHAINS[op.chainId].rpc,service:CHAINS[op.chainId].service};
+  return{...op,id,name:CHAINS[op.chainId].name,signing,before,simulation,simulationUrl:attached?.url||'',rpc:rpcFor(this.root,op.chainId,CHAINS[op.chainId].rpc),service:CHAINS[op.chainId].service};
  }
  signatures(op){return this.state.signatures.filter(s=>s.id===op.id&&s.safeTxHash===op.safeTxHash);}
  list(){this.refresh();return this.ids().map(id=>{const op=this.operation(id),sigs=this.signatures(op);return{id,chainId:op.chainId,chain:op.name,safe:op.safe,nonce:op.signing.message.nonce,hash:op.safeTxHash,draft:!!op.draft,currentThreshold:op.before.threshold,proposedThreshold:op.threshold,newOwners:op.newOwners,owners:op.before.owners,signing:op.signing,simulation:op.simulation,simulationUrl:op.simulationUrl,tenderlyJob:this.state.tenderlyJobs?.[id]||null,signatures:sigs.map(s=>({sender:s.sender,mode:s.mode})),result:this.state.results[id]||null};});}
- async json(url,options={}){const r=await this.fetcher(url,{...options,signal:AbortSignal.timeout(25000)});if(!r.ok)throw Error(`Service request failed (${r.status})`);return r.json();}
- async rpc(op,method,params=[]){const j=await this.json(op.rpc,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});if(j.error)throw Error(j.error.message||'RPC rejected request');return j.result;}
+ async json(url,options={}){let r;try{r=await this.fetcher(url,{...options,redirect:'error',signal:AbortSignal.timeout(25000)});}catch{throw Error('Service request failed or timed out');}if(!r.ok)throw Error(`Service request failed (${r.status})`);try{return await r.json();}catch{throw Error('Service returned an unreadable response');}}
+ async rpc(op,method,params=[]){const j=await this.json(op.rpc,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});if(j.error||j.result===undefined)throw Error(`RPC ${method} rejected the request or returned no result`);return j.result;}
  async check(id,{ready=false}={}){
   const op=this.operation(id),m=op.signing.message;
   if(Number(BigInt(await this.rpc(op,'eth_chainId')))!==op.chainId)throw Error('RPC chain differs');
@@ -111,15 +114,16 @@ export class BatchStore{
  async add(id,input){
   safeId(id);if(this.ids().includes(id)||fs.existsSync(path.join(this.root,id)))throw Error('Name already exists');const s=normalizeSigning(input);
   for(const old of this.list())if(old.chainId===s.domain.chainId&&old.safe.toLowerCase()===s.domain.verifyingContract.toLowerCase()&&String(old.nonce)===s.message.nonce)throw Error('Safe/nonce is already in this batch');
-  const chain=CHAINS[s.domain.chainId],op={id,chainId:s.domain.chainId,safe:s.domain.verifyingContract,safeTxHash:s.safeTxHash,nonce:Number(s.message.nonce),...chain};
+  const chain=CHAINS[s.domain.chainId],op={id,chainId:s.domain.chainId,safe:s.domain.verifyingContract,safeTxHash:s.safeTxHash,nonce:Number(s.message.nonce),...chain,rpc:rpcFor(this.root,s.domain.chainId,chain.rpc)};
   if(!Number.isSafeInteger(op.nonce))throw Error('Nonce outside supported range');
   if(Number(BigInt(await this.rpc(op,'eth_chainId')))!==op.chainId)throw Error('RPC chain differs');
   const block=await this.rpc(op,'eth_blockNumber');
   const call=async(name,args=[])=>SAFE_ABI.decodeFunctionResult(name,await this.rpc(op,'eth_call',[{to:op.safe,data:SAFE_ABI.encodeFunctionData(name,args)},block]))[0];
   const owners=[...await call('getOwners')],threshold=Number(await call('getThreshold'));if(String(await call('nonce'))!==s.message.nonce)throw Error('Imported nonce is not current');
   const m=s.message;if((await call('getTransactionHash',[m.to,m.value,m.data,m.operation,m.safeTxGas,m.baseGas,m.gasPrice,m.gasToken,m.refundReceiver,m.nonce])).toLowerCase()!==s.safeTxHash.toLowerCase())throw Error('Onchain Safe hash differs');
-  const dir=path.join(this.root,id);fs.mkdirSync(dir);for(const [name,value]of Object.entries({'operation.json':{...op,threshold:null,newOwners:[],draft:false,imported:true},'signing-data.json':s,'current-owners.json':{owners,threshold,nonce:op.nonce,safe:op.safe,chainId:op.chainId}}))fs.writeFileSync(path.join(dir,name),JSON.stringify(value,null,2));
-  const file=path.join(this.root,'batch.json'),batch=read(file);batch.operations.push(op);fs.writeFileSync(file,JSON.stringify(batch,null,2));return{id,hash:s.safeTxHash};
+  const {rpc:privateRpc,...publicOp}=op;
+  const dir=path.join(this.root,id);fs.mkdirSync(dir);for(const [name,value]of Object.entries({'operation.json':{...publicOp,threshold:null,newOwners:[],draft:false,imported:true},'signing-data.json':s,'current-owners.json':{owners,threshold,nonce:op.nonce,safe:op.safe,chainId:op.chainId}}))fs.writeFileSync(path.join(dir,name),JSON.stringify(value,null,2));
+  this.init();const file=path.join(this.root,'batch.json'),batch=read(file);batch.operations.push(publicOp);fs.writeFileSync(file,JSON.stringify(batch,null,2));return{id,hash:s.safeTxHash};
  }
  async review(ids){if(!Array.isArray(ids)||!ids.length||new Set(ids).size!==ids.length)throw Error('Select at least one unique operation');const out=[];for(const id of ids){const op=this.operation(id),live=await this.check(id,{ready:true}),sigs=this.signatures(op);if(!sigs.length)throw Error(`${id}: no collected signatures`);for(const sig of sigs){recoverSignature(op.signing,sig.sender,sig.signature);if(!live.owners.some(x=>x.toLowerCase()===sig.sender.toLowerCase()))throw Error('Collected signer is no longer owner');}out.push({id,safe:op.safe,chain:op.name,hash:op.safeTxHash,nonce:live.nonce,signers:sigs.map(x=>x.sender),signatures:sigs.length,threshold:live.threshold});}return out;}
  async propose(ids){
@@ -130,7 +134,7 @@ export class BatchStore{
     const url=`${op.service}/api/v1/multisig-transactions/${op.safeTxHash}/`;let existing=null;
     const found=await this.fetcher(url,{signal:AbortSignal.timeout(25000)});if(found.ok){existing=await found.json();if(existing.isExecuted)throw Error('Transaction already executed');}else if(found.status!==404)throw Error(`Proposal lookup failed (${found.status})`);
     const first=sigs[0];
-    if(!existing){const payload={...m,nonce:Number(m.nonce),safeTxGas:Number(m.safeTxGas),baseGas:Number(m.baseGas),contractTransactionHash:op.safeTxHash,sender:first.sender,signature:first.signature,origin:'Threshold Safe batch console'};for(const k of ['nonce','safeTxGas','baseGas'])if(!Number.isSafeInteger(payload[k]))throw Error('Unsafe numeric field');await this.post(`${op.service}/api/v1/safes/${op.safe}/multisig-transactions/`,payload);existing=await this.json(url);}
+    if(!existing){const payload={...m,nonce:Number(m.nonce),safeTxGas:Number(m.safeTxGas),baseGas:Number(m.baseGas),contractTransactionHash:op.safeTxHash,sender:first.sender,signature:first.signature,origin:'SafeDesk'};for(const k of ['nonce','safeTxGas','baseGas'])if(!Number.isSafeInteger(payload[k]))throw Error('Unsafe numeric field');await this.post(`${op.service}/api/v1/safes/${op.safe}/multisig-transactions/`,payload);existing=await this.json(url);}
     const confirmed=new Set((existing.confirmations||[]).map(c=>c.owner.toLowerCase()));
     for(const sig of sigs)if(!confirmed.has(sig.sender.toLowerCase()))await this.post(`${url}confirmations/`,{signature:sig.signature});
     result={status:'proposed',safeTxHash:op.safeTxHash,at:new Date().toISOString(),safeUrl:`https://app.safe.global/transactions/queue?safe=${CHAINS[op.chainId].short}:${op.safe}`};

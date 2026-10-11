@@ -4,14 +4,15 @@ import {parseEnv} from 'node:util';
 import {randomUUID} from 'node:crypto';
 import {ethers} from 'ethers';
 import {SAFE_ABI,simulationMatch} from './core.mjs';
+import {privateConfig,preferences} from './settings.mjs';
 
 const project=path.resolve(import.meta.dirname,'../..');
 const APPROVE=new ethers.Interface(['function approveHash(bytes32)']);
 const sameOwners=(a,b)=>a.map(x=>x.toLowerCase()).sort().join()===b.map(x=>x.toLowerCase()).sort().join();
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-export function loadTenderlyConfig(){
+export function loadTenderlyConfig(root){
  const candidates=process.env.SAFE_BATCH_TENDERLY_ENV_FILE?[path.resolve(process.env.SAFE_BATCH_TENDERLY_ENV_FILE)]:[path.join(project,'.env'),path.join(project,'../Tenderly_simulations/.env')];
- const file=candidates.find(p=>fs.existsSync(p));const env={...(file?parseEnv(fs.readFileSync(file,'utf8')):{}),...process.env};
+ const file=candidates.find(p=>fs.existsSync(p));const env={...(file?parseEnv(fs.readFileSync(file,'utf8')):{}),...process.env,...(root?privateConfig(root):{})};
  const config={account:env.TENDERLY_ACCOUNT_SLUG,project:env.TENDERLY_PROJECT_SLUG,key:env.TENDERLY_ACCESS_KEY||env.TENDERLY_ACCESS_TOKEN};
  config.configured=!!(config.account&&config.project&&config.key);
  if(config.configured&&!/^[\w-]+$/.test(config.account+config.project))throw Error('Invalid Tenderly account/project slug');
@@ -28,8 +29,8 @@ export function assertVirtualRpc(value){
  return u.href;
 }
 export class TenderlyRunner{
- constructor(store,{fetcher=fetch,config=loadTenderlyConfig,policy=loadPolicy,wait=pause}={}){this.store=store;this.fetcher=fetcher;this.config=config;this.policy=policy;this.wait=wait;}
- status(){const c=this.config(),p=this.policy();return{configured:c.configured,enabled:p.enabled,maxEnvironments:p.maxEnvironments,maxRunsPerDay:p.maxRunsPerDay};}
+ constructor(store,{fetcher=fetch,config=()=>loadTenderlyConfig(store.root),policy=loadPolicy,wait=pause}={}){this.store=store;this.fetcher=fetcher;this.config=config;this.policy=policy;this.wait=wait;}
+ status(){const c=this.config(),p=this.policy();return{configured:c.configured,enabled:p.enabled&&preferences(this.store.root).tenderlyEnabled!==false,maxEnvironments:p.maxEnvironments,maxRunsPerDay:p.maxRunsPerDay};}
  async request(url,options={},timeout=30000){
   let r;try{r=await this.fetcher(url,{...options,redirect:'error',signal:AbortSignal.timeout(timeout)});}catch{throw Error('Tenderly request failed or timed out. No automatic retry was made.');}
   if(!r.ok)throw Error(`Tenderly request rejected (HTTP ${r.status})`);
@@ -41,7 +42,7 @@ export class TenderlyRunner{
   if(!Array.isArray(data))throw Error('Cannot verify Tenderly environment capacity');return data;
  }
  async plan(id,{publicExplorer=false}={}){
-  const config=this.config(),policy=this.policy();if(!config.configured)throw Error('Configure Tenderly credentials in the private .env first');if(policy.enabled!==true)throw Error('Tenderly simulation is disabled by the project safety policy');
+  const config=this.config(),policy=this.policy();if(!config.configured)throw Error('Configure Tenderly account, project and access key in SafeDesk settings');if(policy.enabled!==true||preferences(this.store.root).tenderlyEnabled===false)throw Error('Tenderly simulation is disabled in settings or by the project safety policy');
   const live=await this.store.check(id),op=this.store.operation(id);
   const networks=await this.request('https://api.tenderly.co/api/v1/supported-networks');
   if(!Array.isArray(networks)||!networks.some(n=>Number(n.chain_id)===op.chainId&&n.supported_features?.virtual_testnet===true))throw Error('Tenderly does not list Virtual Environment support for this chain');

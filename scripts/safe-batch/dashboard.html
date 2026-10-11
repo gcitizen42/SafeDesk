@@ -1,11 +1,24 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Safe proposal desk</title><link rel="stylesheet" href="/dashboard.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SafeDesk</title><link rel="stylesheet" href="/dashboard.css"></head>
 <body>
-<header><div><h1>Safe proposal desk</h1><span id="batchCount"></span></div><button id="connect"><i data-lucide="wallet"></i><span>Connect Ledger wallet</span></button></header>
+<header><div class="brand"><i data-lucide="shield-check" aria-hidden="true"></i><div><h1>SafeDesk</h1><span id="batchCount"></span></div></div><div class="tools"><button id="settings" class="icon" title="Network and Tenderly settings" aria-label="Network and Tenderly settings"><i data-lucide="settings"></i></button><button id="connect"><i data-lucide="wallet"></i><span>Connect Ledger wallet</span></button></div></header>
 <main>
- <section class="toolbar"><div class="tools"><button id="add"><i data-lucide="plus"></i>Add Safe</button><button id="import"><i data-lucide="upload"></i>Import collection</button><button id="export"><i data-lucide="download"></i>Export collection</button></div><button id="review" class="primary"><i data-lucide="send"></i>Review proposals <span id="selectedCount"></span></button></section>
+ <section class="toolbar" id="batchToolbar"><div class="tools"><button id="add"><i data-lucide="plus"></i>Add Safe</button><button id="preparedImport"><i data-lucide="file-up"></i>Import transaction</button><button id="import"><i data-lucide="upload"></i>Import collection</button><button id="export"><i data-lucide="download"></i>Export collection</button></div><button id="review" class="primary"><i data-lucide="send"></i>Review proposals <span id="selectedCount"></span></button></section>
  <div id="status" role="status" aria-live="polite">Loading prepared operations...</div>
- <section class="workspace">
+ <section id="setup" class="setup" hidden>
+  <div class="setup-head"><h2 id="setupTitle">Set up your first Safe</h2><button id="cancelSetup" class="icon" title="Back to operations" aria-label="Back to operations"><i data-lucide="x"></i></button></div>
+  <ol id="setupSteps" class="setup-steps" aria-label="Setup progress"></ol>
+  <form id="setupForm" novalidate>
+   <section data-step="1"><h3>Network connection</h3><label>Network<select id="setupChain" name="chainId"></select></label><label>RPC source<select id="rpcChoice"></select></label><label id="customRpcLabel" hidden>Custom RPC URL<input id="customRpc" type="password" autocomplete="off" spellcheck="false" placeholder="https://..."></label><div class="source-line"><span id="catalogSource"></span><a href="https://chainlist.org" target="_blank" rel="noopener noreferrer">Chainlist</a></div></section>
+   <section data-step="2" hidden><h3>Safe account</h3><label>Operation name<input id="setupId" placeholder="treasury-ethereum" maxlength="64" spellcheck="false"></label><label>Safe address<input id="setupSafe" placeholder="0x..." spellcheck="false"></label><div class="tools"><button type="button" id="loadSafe"><i data-lucide="search"></i>Load Safe</button></div><div id="safeSnapshot" class="snapshot" aria-live="polite"></div></section>
+   <section data-step="3" hidden><h3>Desired final owners</h3><label>Complete final owner list<textarea id="setupOwners" spellcheck="false" rows="9"></textarea></label><div id="ownerCount" class="note"></div><label>Required approvals<input id="setupThreshold" type="number" min="1" step="1"></label></section>
+   <section data-step="4" hidden><h3>Tenderly</h3><label class="checkbox-label"><input id="setupTenderly" type="checkbox">Enable virtual simulations</label><div id="tenderlyFields" hidden><label>Account slug<input id="setupAccount" autocomplete="off" spellcheck="false"></label><label>Project slug<input id="setupProject" autocomplete="off" spellcheck="false"></label><label>Access key<input id="setupKey" type="password" autocomplete="new-password" placeholder="Leave blank to keep the configured key"></label><div id="keyStatus" class="note"></div></div></section>
+   <section data-step="5" hidden><h3>Review rotation</h3><div id="setupReview"></div><p class="note">Preparing does not sign, propose or execute a transaction. A matching successful simulation is required before signature collection.</p></section>
+   <div id="setupError" class="error" role="alert"></div>
+   <div class="setup-actions"><button type="button" id="setupBack"><i data-lucide="arrow-left"></i>Back</button><button type="submit" id="setupNext" class="primary">Continue<i data-lucide="arrow-right"></i></button></div>
+  </form>
+ </section>
+ <section class="workspace" id="batchWorkspace">
   <aside><div class="aside-title">Prepared operations <button id="refresh" class="icon" title="Reload batch" aria-label="Reload batch"><i data-lucide="refresh-cw"></i></button></div><div id="operations"></div></aside>
   <section class="detail" id="detail"><p>Select a Safe.</p></section>
  </section>

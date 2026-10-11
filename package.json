@@ -1,12 +1,14 @@
 {
-  "name": "tdao-signerrotation",
-  "version": "0.1.0",
+  "name": "safedesk",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Threshold DAO Safe signer rotation discovery and transaction-builder JSON preparation.",
+  "description": "SafeDesk: multichain Safe owner rotations, Ledger signature collection, proposal tracking and guarded Tenderly simulations.",
   "scripts": {
     "test": "node --test scripts/safe-batch/*.test.mjs",
     "batch": "node scripts/safe-batch/cli.mjs",
+    "safedesk": "node scripts/safe-batch/cli.mjs",
+    "start": "node scripts/safe-batch/cli.mjs serve",
     "balances": "node scripts/audit-safe-balances.mjs",
     "discover": "node scripts/discover-safes.mjs",
     "generate": "node scripts/generate-rotation-json.mjs",

@@ -1,6 +1,6 @@
-# Safe Proposal Desk
+# SafeDesk Operator Guide
 
-Collect Ledger signatures for a prepared batch of Safe transactions, then publish the selected proposals to their chain-specific Safe transaction services. Browser and CLI share the same local collection. No private key is required or stored.
+Prepare owner rotations, monitor Safe transaction readiness, collect Ledger signatures across chains, then publish selected proposals to their chain-specific Safe transaction services. Browser and CLI share the same local collection. No private key is required or stored.
 
 **Propose is not execute.** Publication exposes the signatures to the Safe service. Actual onchain execution remains a separate action after each Safe's approval threshold is met. Publishing several proposals is sequential, not one atomic multichain transaction.
 
@@ -10,31 +10,54 @@ Requires Node.js 22 or newer and this project's installed dependencies.
 
 ```bash
 cd /Users/Citizen42/Desktop/TdaoUtils/AI-ops/tDAO-signerrotation
-npm install --ignore-scripts
-npm run batch -- serve
+npm ci --ignore-scripts
+npm start
 ```
 
 Open http://127.0.0.1:8770/ in Chrome or Brave with MetaMask and your Ledger account. The Codex in-app browser can show the desk but may not expose your wallet extension. The server listens only on localhost. If 8770 is already running, use that instance, or choose `serve --port 8771`.
 
 The default batch is `operations/2026-10-09-outstanding-rotations`. Every command accepts `--root /absolute/path/to/another/prepared-batch`.
 
-Operation folders and signatures are intentionally not committed. On a fresh checkout, initialize an empty batch before starting the desk:
+Operation folders and signatures are intentionally not committed. On a fresh checkout, starting the desk initializes an empty batch and opens the setup wizard automatically:
 
 ```bash
 npm ci --ignore-scripts
-npm run batch -- init
-npm run batch -- serve
+npm start
 ```
 
-This uses `operations/batch` when the existing local October batch is absent. Import your complete prepared `signing-data.json` with **Add Safe**, or choose an existing batch with `--root`. Do not commit private preparations or collections to share them.
+This uses `operations/batch` when the existing local October batch is absent. **Add Safe** starts the rotation wizard; **Import transaction** accepts complete prepared `signing-data.json`. Choose an existing batch with `--root`. Do not commit private preparations or collections to share them. `npm run safedesk -- ...` is the preferred CLI command; `npm run batch -- ...` remains compatible.
+
+## Setup Wizard
+
+1. Choose one of the six supported networks. RPC choices are fetched server-side from `https://chainlist.org/rpcs.json`, cached for an hour, with known public fallbacks. The default is a known public endpoint; the catalogue is not a guarantee of provider reliability. Chain identity is checked before proceeding. Custom RPCs must be public HTTPS endpoints, with no URL login, local/private network address or unresolved placeholders.
+2. Give the operation a unique lowercase name and load the Safe address. Owners, threshold and nonce are read at a single block. Wrong-chain RPCs, undeployed accounts and invalid Safe state are rejected.
+3. Enter the **entire desired final owner list**, not just incoming owners. Threshold starts at the Safe's current value and must be between one and the final owner count. Removing owners does not authorize an unapproved threshold choice.
+4. Optionally enable Tenderly and enter the account slug, project slug and access key. A blank key preserves an existing configuration. This step creates no virtual environment. With Tenderly disabled, you can still attach trusted external matching simulation evidence.
+5. Review both owner lists and the threshold, then prepare. SafeDesk uses Safe Owner Manager against a pinned verified snapshot, independently validates its owner-list predecessors and final state, builds the complete SafeTx and compares its hash with the Safe contract. It rechecks live state and the service queue before saving. No-op changes, occupied nonces and duplicate preparations are blocked.
+
+Prepared files are saved under `<batch>/<operation>/`: `rotation.json`, `operation.json`, `current-owners.json`, `owners-after.json`, `decoded-inner-transactions.json` and `signing-data.json`. Preparation does not sign, propose or execute. A matching successful simulation is required to collect signatures.
+
+The settings icon edits network RPCs and optional Tenderly configuration. Configured private RPCs are never returned to the browser; choose **Keep configured RPC** to reuse one, or enter a replacement. Wallet network addition always uses the built-in public RPC, not your private URL.
+
+Safe Owner Manager 1.0.4 omits a threshold-only change when the owner set is unchanged. SafeDesk handles that case with an explicit `changeThreshold` call and validates the resulting threshold. All owner changes continue to use the library's output.
+
+## Current Transaction and Wallet
+
+**Refresh transaction** reads the chain and the Safe service without signing or submitting. It shows current/prepared nonces, proposal/execution state, the current queue and conflicts, published approvals, local signatures, and usable distinct current-owner signatures. Local signatures are not counted as published approvals.
+
+Published EOA signatures are cryptographically recovered against the full payload. Preapproved-hash signatures are counted only when the current Safe's onchain approval exists. Contract-owner/EIP-1271 or unverified service confirmations are shown as unverified and excluded. Unknown/unavailable service data is never presented as ready. After a live check, the displayed current owner list and threshold use the current chain state.
+
+Signing readiness requires an existing owner, correct wallet network, unchanged payload/state, no conflicting nonce, no draft, and matching successful simulation. With enough usable signatures and a connected wallet, SafeDesk also attempts an `eth_call` of the exact execution and estimates gas at the inspected block, comparing estimated native cost to the wallet balance with 20% headroom. Any account can potentially submit a valid fully approved Safe execution; being an owner is not itself an execution requirement.
+
+This is a **read-only readiness check**, not an execution guarantee or cost quote. State/gas prices can change, guards can reject, and L2 data fees may not be fully reflected in the RPC estimate. Execution remains a separate wallet-confirmed action through **Open in Safe**. Publish local-only approvals first when using Safe's UI. No automatic polling or blockchain broadcast occurs.
 
 ## Browser Workflow
 
 1. Select a Safe in the left list. Check its chain, address, nonce, complete payload, current/proposed owners and approval threshold.
-2. Use **Check current state**. Live chain state and the Safe service queue must still match the preparation.
+2. Use **Refresh transaction**. Review nonce, approvals, conflicts and wallet readiness.
 3. Use **Simulate on Tenderly** to review and confirm a new isolated environment. It assumes owner approvals, executes the exact SafeTx on the fork, checks the success event/final state, and automatically attaches the result and dashboard link. Alternatively, **Attach result** accepts existing evidence. The earlier BOB local-fork reports are not Tenderly vnets.
 4. Connect your existing owner account. **Sign and collect** requests EIP-712 signing and switches the wallet to the selected chain. Validate the request yourself on the Ledger. **Ledger hash signing** is the personal_sign fallback for the exact SafeTx hash; it provides less hardware-readable context.
-5. The server verifies signature recovery against the exact transaction and current owners before saving it. Use **Next Safe**, or **Add Safe** to import another full `signing-data.json`.
+5. The server verifies signature recovery against the exact transaction and current owners before saving it. Use **Next Safe**, **Add Safe** to prepare another rotation, or **Import transaction** for existing full signing data.
 6. **Export collection** creates a portable signature file. **Import collection** revalidates signatures against the already-prepared operations. Matching simulation evidence must be present on the receiving machine too; imports do not automatically trust simulation metadata in a collection.
 7. Select the operations you intend to publish, use **Review proposals**, inspect the review, then press **Propose selected**. This publishes proposals/confirmations, not onchain transactions.
 
@@ -71,11 +94,44 @@ npm run batch -- export --out /private/path/safe-signature-collection.json
 npm run batch -- import /private/path/safe-signature-collection.json
 ```
 
-`add` expects the complete EIP-712 domain and all ten SafeTx fields, not a Safe address or hash alone. It checks the chain, current nonce and onchain transaction hash. Imported generic transactions do not claim a final owner roster/threshold; inspect their payload and simulation separately. Supported chains: Ethereum, BOB, Optimism, Arbitrum, Polygon and Base. RPCs/services are fixed known public endpoints in `core.mjs`; imported files cannot redirect proposal submission to an arbitrary service.
+`add` expects the complete EIP-712 domain and all ten SafeTx fields, not a Safe address or hash alone. It checks the chain, current nonce and onchain transaction hash. Imported generic transactions do not claim a final owner roster/threshold; inspect their payload and simulation separately. Supported chains: Ethereum, BOB, Optimism, Arbitrum, Polygon and Base. Configured RPCs override known public defaults. Safe services remain fixed trusted endpoints; imported files cannot redirect proposal submission to an arbitrary service.
+
+### CLI Setup and Readiness
+
+```bash
+npm run safedesk -- chains
+npm run safedesk -- configure
+npm run safedesk -- configure --file /private/path/settings.json
+npm run safedesk -- inspect --file /private/path/rotation-input.json
+npm run safedesk -- prepare --file /private/path/rotation-input.json
+npm run safedesk -- status ID
+npm run safedesk -- status ID --account 0xYOUR_EXECUTOR --wallet-chain 60808
+```
+
+`configure` without a file prints redacted configuration only. `prepare` prompts for **PREPARE** after displaying the live snapshot and requested final owners/threshold. The externally signed hash is produced during preparation, before simulation or signing; simulation does not create a different signing hash.
+
+Rotation input shape (addresses below are examples, not actual deployment instructions):
+
+```json
+{
+  "id": "my-safe",
+  "chainId": 60808,
+  "safe": "0x1111111111111111111111111111111111111111",
+  "newOwners": [
+    "0x2222222222222222222222222222222222222222",
+    "0x3333333333333333333333333333333333333333"
+  ],
+  "threshold": 2
+}
+```
+
+Optional `rpcUrl` overrides the chain's configured/default RPC. Optional `tenderly` object accepts `enabled`, `account`, `project`, `key`. The same RPC/Tenderly fields can be supplied to `configure`. Keep credential-bearing input files under `<batch>/secrets/`, with mode 0600, or another ignored private location, not in command arguments or source-controlled examples. Each command accepts `--root /absolute/batch/path`. CLI Ledger signatures still come from the browser or an external signer.
 
 ## Built-in Tenderly Simulation
 
-Credentials stay server-side. Configure `TENDERLY_ACCOUNT_SLUG`, `TENDERLY_PROJECT_SLUG` and `TENDERLY_ACCESS_KEY` in your ignored project `.env` (see `.env.example`) or your shell. `SAFE_BATCH_TENDERLY_ENV_FILE` can point to another private environment file. In the existing AI-ops installation, `../Tenderly_simulations/.env` is reused if no project `.env` exists; no keys are copied into source files or sent to the browser.
+Credentials stay server-side. The wizard/settings write custom RPCs and Tenderly credentials to `<batch>/secrets/safedesk.env`, mode 0600; non-secret enable/disable preference is `<batch>/secrets/settings.json`. These are ignored, plaintext private files, not encryption. Browser fields are cleared when setup finishes or is cancelled; keys and saved private RPCs are not returned in API responses.
+
+Existing `TENDERLY_ACCOUNT_SLUG`, `TENDERLY_PROJECT_SLUG` and `TENDERLY_ACCESS_KEY` in the ignored project `.env` (see `.env.example`) or shell still work. `SAFE_BATCH_TENDERLY_ENV_FILE` can point to another private environment file. In this AI-ops installation, `../Tenderly_simulations/.env` is reused if no project `.env` exists. Batch-specific wizard credentials take precedence; no legacy secrets are copied into source files or sent to the browser. The per-batch disable switch and project safety policy are both enforced.
 
 The button's first step is read-only: it checks current Safe state, Tenderly's supported-network catalogue and current project capacity. Only **Create and simulate**, or typing **SIMULATE** in the CLI, authorizes one new environment. Private explorer is the default. Check **Public explorer**, or use `simulate ID --public-explorer`, only when you intend to expose simulated addresses and calldata.
 
@@ -137,4 +193,4 @@ npm test
 npm audit
 ```
 
-Tests use synthetic wallets and mocked services, including signature binding, simulation matching, stale/conflicting state, partial publication recovery, shared-state locking, HTTP controls, Tenderly capacity/confirmation guards, virtual-RPC restrictions and failed execution handling. Hardware signing, live proposal publication and real virtual-environment creation require an operator's end-to-end test. Development verification itself creates no real environments.
+Tests use synthetic wallets and mocked services, including signature binding, simulation matching, stale/conflicting state, partial publication recovery, shared-state locking, HTTP controls, Tenderly guards, RPC/configuration privacy, real Safe Owner Manager generation against a pinned mock snapshot, wizard preparation and read-only execution readiness. Hardware signing, live proposal publication and real virtual-environment creation require an operator's end-to-end test. Development verification itself creates no real environments.

@@ -1,6 +1,27 @@
-# tDAO Signer Rotation
+# SafeDesk
 
-This project inventories Threshold DAO Safe multisigs for a signer and prepares one Safe Transaction Builder JSON per Safe using [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager).
+SafeDesk is a local workspace for managing Safe multisig owner rotations across Ethereum, Arbitrum, Optimism, Polygon, Base and BOB. Configure RPCs, load a Safe's current owners, choose the complete final owner list and threshold, simulate, collect Ledger signatures and publish reviewed proposals. Rotation calls use [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager).
+
+The live transaction panel shows the current nonce, verified published approvals, locally collected signatures, conflicts, and the connected wallet's ability to sign. With enough usable signatures, it can perform a read-only execution and gas check. **It does not broadcast an execution:** use the Safe link to execute separately after review.
+
+## Quick Start
+
+```bash
+npm ci --ignore-scripts
+npm start
+```
+
+Open [SafeDesk](http://127.0.0.1:8770/) in a wallet-enabled browser. A fresh installation opens the setup wizard automatically:
+
+1. Choose a network and public RPC from the Chainlist catalogue, or enter a custom HTTPS endpoint. SafeDesk verifies its chain ID.
+2. Load the first Safe and review its current owners, threshold and nonce.
+3. Enter the complete desired final owner list and approval threshold.
+4. Optionally configure Tenderly account, project and access key.
+5. Review and prepare the rotation. Simulate before signing, then add further Safes as needed.
+
+Custom RPCs and Tenderly keys stay in ignored local environment files. Existing operations and collected signatures are preserved. The historical folder name stays `tDAO-signerrotation` for compatibility; the application and package are named SafeDesk.
+
+See the [operator guide](scripts/safe-batch/README.md) for the wizard, CLI equivalents, private configuration, simulation and proposal safeguards. The older discovery/audit tools below remain available.
 
 The workflow is intentionally two-stage:
 
@@ -11,7 +32,7 @@ Generated JSON must be reviewed and simulated before use. Optional signing/propo
 
 ## Batch Signing and Proposals
 
-Open the Safe proposal desk to collect signatures across chains, review the batch and publish selected proposals:
+Open SafeDesk to collect signatures across chains, review the batch and publish selected proposals:
 
 ```bash
 npm run batch -- serve
@@ -21,7 +42,7 @@ Open http://127.0.0.1:8770/ in your Ledger/MetaMask browser. CLI users can use `
 
 The **Simulate on Tenderly** button previews one new virtual environment before confirmation, simulates assumed approvals and the exact Safe execution, then attaches the checked result. CLI equivalent: `npm run batch -- simulate ID`. Credentials stay in ignored environment files, and capacity/daily limits prevent unbounded creation.
 
-For a fresh Git checkout, run `npm ci --ignore-scripts`, then `npm run batch -- init` before `serve`. Operations, credentials and signature collections are deliberately excluded from Git; import prepared signing data or specify your own `--root` batch.
+For a fresh Git checkout, `npm start` initializes an empty batch and opens the wizard. Operations, credentials and signature collections are deliberately excluded from Git; importing complete prepared signing data and choosing your own `--root` batch are also supported.
 
 The default batch contains the five outstanding preparations from 9 October 2026. Drafts remain blocked. Publishing a proposal is separate from executing it, and signatures must not be reused across Safes or chains.
 

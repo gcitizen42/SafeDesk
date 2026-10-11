@@ -4,8 +4,11 @@ import path from 'node:path';
 import {randomBytes} from 'node:crypto';
 import {BatchStore,CHAINS} from './core.mjs';
 import {TenderlyRunner} from './tenderly.mjs';
+import {ChainCatalog,SafeWorkflow} from './workflow.mjs';
+import {publicSettings} from './settings.mjs';
 const here=import.meta.dirname,project=path.resolve(here,'../..');
-export function createServer(root,{store=new BatchStore(root),port=8770,runner=new TenderlyRunner(store)}={}){
+export function createServer(root,{store=new BatchStore(root),port=8770,runner=new TenderlyRunner(store),workflow=new SafeWorkflow(store),catalog=new ChainCatalog()}={}){
+ store.init();
  const token=randomBytes(32).toString('hex'),reviews=new Map(),simulationPlans=new Map();let busy=false;
  const origins=new Set([`http://127.0.0.1:${port}`,`http://localhost:${port}`]);
  const publicFiles={'/':'dashboard.html','/dashboard.html':'dashboard.html','/dashboard.mjs':'dashboard.mjs','/dashboard.css':'dashboard.css'};
@@ -15,7 +18,11 @@ export function createServer(root,{store=new BatchStore(root),port=8770,runner=n
   if(req.headers.origin&&!origins.has(req.headers.origin))return send(res,403,{error:'Unexpected origin'});
   const url=new URL(req.url,'http://localhost');
   try{
-   if(req.method==='GET'&&url.pathname==='/api/batch')return send(res,200,{token,operations:store.list(),chains:CHAINS,tenderly:runner.status()});
+   if(req.method==='GET'&&url.pathname==='/api/batch')return send(res,200,{token,operations:store.list(),chains:CHAINS,tenderly:runner.status(),settings:publicSettings(root),setupRequired:store.ids().length===0});
+   if(req.method==='GET'&&url.pathname==='/api/chains'){
+    if(req.headers['x-batch-token']!==token)return send(res,403,{error:'Session token required'});
+    return send(res,200,await catalog.get());
+   }
    if(req.method==='GET'&&url.pathname==='/api/tenderly-progress'){
     if(req.headers['x-batch-token']!==token)return send(res,403,{error:'Session token required'});
     store.operation(url.searchParams.get('id'));store.refresh();return send(res,200,{job:store.state.tenderlyJobs?.[url.searchParams.get('id')]||null});
@@ -34,6 +41,11 @@ export function createServer(root,{store=new BatchStore(root),port=8770,runner=n
      let result;
      switch(url.pathname){
       case '/api/check':result=await store.check(input.id);break;
+      case '/api/settings':result=await workflow.configure(input);break;
+      case '/api/rpc-check':{const c=await workflow.context(input.chainId,input.rpcUrl);result={chainId:c.chainId,verified:true};break;}
+      case '/api/inspect':result=await workflow.inspect(input);break;
+      case '/api/prepare':if(input.confirm!=='PREPARE')throw Error('Review the complete final owner list and threshold first');result=await workflow.prepare(input);break;
+      case '/api/transaction-status':result=await workflow.transactionStatus(input.id,{account:input.account,walletChainId:input.walletChainId});break;
       case '/api/collect':result=await store.collect(input.id,input.sender,input.signature);break;
       case '/api/simulation':result=store.attach(input.id,input.url,input.document);break;
       case '/api/add':result=await store.add(input.id,input.signing);break;
