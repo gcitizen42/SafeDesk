@@ -1,0 +1,27 @@
+name: SafeDesk checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run setup:manager
+      - run: npm run check:public -- --history
+      - run: npm test
+      - run: npm run test:manager
+      - run: npm run build:manager
+      - run: npm audit --audit-level=low
+      - run: npm run audit:manager

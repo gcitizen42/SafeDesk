@@ -52,6 +52,10 @@ test('collect persists privately, deduplicates signer and permits one-signature 
  assert.equal(f.store.list()[0].signatures.length,1);assert.equal(f.store.list()[0].signatures[0].signature,undefined);
  assert.equal((await f.store.propose(['fixture']))[0].status,'proposed');assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.url.includes('rpc.gobob')).length,1);
 });
+test('the signing dropdown method is enforced before chain calls and never silently falls back',async()=>{
+ const f=fixture();await assert.rejects(f.store.collect('fixture',wallet.address,raw,'eip712'),/selected signing method/);await assert.rejects(f.store.collect('fixture',wallet.address,typed,'eth_sign'),/selected signing method/);assert.equal(f.calls.length,0);assert.equal(f.store.state.signatures.length,0);
+ await f.store.collect('fixture',wallet.address,typed,'eip712');assert.equal(f.store.list()[0].signatures[0].mode,'EIP-712');await f.store.collect('fixture',wallet.address,raw,'eth_sign');assert.equal(f.store.list()[0].signatures[0].mode,'Safe personal_sign');
+});
 test('stale nonce, draft or conflicting queue block collection and publication',async()=>{
  const f=fixture();f.state.nonce=12;await assert.rejects(f.store.collect('fixture',wallet.address,typed),/changed/);assert.equal(f.store.state.signatures.length,0);f.state.nonce=11;
  f.state.queue=[{nonce:11,safeTxHash:ethers.ZeroHash}];await assert.rejects(f.store.check('fixture'),/Another/);f.state.queue=[];

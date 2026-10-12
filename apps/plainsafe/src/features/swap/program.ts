@@ -172,7 +172,7 @@ export const requote = (chainId: number, c: UniswapContracts, route: Route, amou
  * A MultiSendCallOnly on this chain whose code matches its code hash (SPEC §4.2): the Safe's own
  * version first, then the others. Any version works with any Safe.
  */
-const multiSendCallOnly = (chainId: number, version: string) =>
+export const multiSendCallOnly = (chainId: number, version: string) =>
   Effect.gen(function* () {
     const { client, endpoint } = yield* clientFor(chainId)
     const candidates = [...deployments.multiSendCallOnly]

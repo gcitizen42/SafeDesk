@@ -21,10 +21,20 @@ export function AboutSettings() {
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">About Plain Safe</h2>
+        <h2 className="text-lg font-semibold">About SafeDesk</h2>
         <p className="text-sm text-muted-foreground">
-          A local-first Safe multisig interface. It reads the chain only through your RPCs, keeps
-          everything in this browser, and contacts nothing else unless you turn it on. MIT licensed.
+          SafeDesk includes a modified copy of{' '}
+          <a
+            className="underline"
+            href="https://github.com/gskril/plainsafe"
+            target="_blank"
+            rel="noreferrer"
+          >
+            PlainSafe
+          </a>{' '}
+          by Greg Skriloff, developed at ETHGlobal Tokyo 2026. Its MIT license is preserved.
+          Upstream commit:{' '}
+          <code className="break-all">9a23f9ab38501cf09bb5464b2b5684314e9fb7d5</code>.
         </p>
         <dl
           className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm"

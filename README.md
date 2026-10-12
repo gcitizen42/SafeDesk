@@ -2,10 +2,10 @@
 
 SafeDesk is a local workspace with two separate tabs:
 
-- **Safe Management**, powered by a pinned MIT-licensed copy of [PlainSafe](https://github.com/gskril/plainsafe): configure RPCs, inspect Safes, build/review transaction packages and share EIP-712 signatures without the Safe Transaction Service. Starts read-only.
+- **Safe Management**, powered by a pinned, modified MIT-licensed copy of [PlainSafe](https://github.com/gskril/plainsafe): configure RPCs, inspect Safes, build/edit/import transactions, choose EIP-712 or Ledger hash signing and share verified packages. Starts read-only.
 - **Rotations & Simulations**, our existing multichain workflow: choose owners/thresholds, generate calls using [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager), simulate with Tenderly, collect Ledger signatures and publish reviewed proposals.
 
-The tabs run on separate local origins. They do not automatically share credentials, private collections or browser storage. **PlainSafe is unaudited; local hosting is not a security certification.** Read the [integration and safety guide](apps/plainsafe/SAFEDESK.md) before enabling management wallet actions.
+The tabs run on separate local origins. They share a public Chainlist parser, not credentials, signature collections or browser storage. **SafeDesk is unaudited; local hosting is not a security certification.** Read [Security](SECURITY.md) and the [integration guide](apps/plainsafe/SAFEDESK.md) before enabling management wallet actions. Credit and the original license are preserved in [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 The rotations tab's live panel shows nonce, verified published approvals, local signatures, conflicts and wallet readiness. Its execution/gas check is read-only; use Safe to execute separately. The management tab can sign/execute only when explicitly enabled at launch and confirmed in the wallet. It is not a private relay and must not be used for the Republic incident operation.
 
@@ -32,7 +32,49 @@ On a fresh rotation batch, its wizard asks you to:
 
 Rotation RPCs and Tenderly keys stay in ignored local environment files. Management settings, including RPC URLs, stay unencrypted in browser IndexedDB and may be included in private backups. Do not share keyed RPC backups or signature collections publicly. The historical folder name stays `tDAO-signerrotation` for compatibility.
 
-Keep the previous rotation-only server with `npm run start:rotations`. CLI commands still work. Management's local queue does not mirror Safe service proposals and cannot import our earlier `eth_sign` Ledger signatures. See its guide for limitations and the explicit `--enable-wallet-actions` option.
+Keep the previous rotation-only server with `npm run start:rotations`. CLI commands still work. Management's local queue does not mirror Safe service proposals, and earlier rotation collections use a different file format. EIP-712 and Safe personal-sign packages are now supported; no signature is automatically copied between origins.
+
+## Networks and Signing
+
+Both workspaces use the same sanitised [Chainlist catalogue](https://chainlist.org). In management, choose **Add network**, **Load public chains**, search/select the chain, choose a public or custom RPC, then test its chain ID before adding it. The top **Network** dropdown filters your configured Safes without silently switching a transaction to another chain.
+
+The catalogue covers positive, safe-integer EVM chain IDs; non-EVM wallets use different tools. Inclusion does not imply a valid Safe deployment, a reliable RPC or Safe service support. Private/placeholder endpoints are excluded, requests are bounded, and known public defaults remain available offline.
+
+The proposal desk deliberately supports Ethereum, Arbitrum, Optimism, Polygon, Base and BOB only. Other EVM chains can be configured for direct Safe management if their Safe bytecode is recognised. Private RPC configuration remains separate between workspaces.
+
+**Signing method** is a small dropdown in each transaction view:
+
+- **EIP-712 typed data** (default): review the complete SafeTx/domain in the wallet.
+- **Ledger hash / personal_sign**: sign the same SafeTx hash using the message prefix; verified signatures are stored in Safe's v=31/32 format.
+
+The app rejects a returned signature that does not match the selected method or owner. There is no silent fallback. Contract/EIP-1271 signatures remain unsupported as plain EOA signatures.
+
+## Transaction Builder
+
+In management, open a Safe and choose **New transaction**. Native/token transfers, contract calls, owners/threshold changes and supported Uniswap actions remain available. **Transaction Builder** adds a raw editor and Safe Builder JSON import:
+
+- Full SafeTx/signing data preserves target, value, calldata, operation, nonce and all gas/refund fields.
+- Safe Builder exports with encoded data or ABI method/input values can be imported. Chain/Safe context is checked.
+- Multiple CALLs are wrapped using a code-hash-verified MultiSendCallOnly. Inner delegatecall batches are rejected; a reviewed full SafeTx can preserve an explicit outer delegatecall.
+- **Edit** and **Edit as new draft** never mutate a signed package. Changed fields generate a different hash and need new signatures; the original remains in the queue.
+- Export a Safe Builder JSON file, full proposal signing data, and a verified signature collection. Full signing data is authoritative for nonce/gas/refund fields; standard Builder JSON is not a signature package.
+
+To publish through the proposal desk, use a supported chain, export the operation's **Proposal signing data**, import it using the same operation name in Rotations & Simulations, attach/run a matching successful simulation, import **Proposal signatures**, then **Review proposals** and confirm publication. CLI equivalents remain available. No export, editing or preparation sends an onchain transaction.
+
+**DELEGATECALL must remain operation 1.** Some external Builder imports may alter it; verify the full resulting SafeTx hash before signing. Proposal publication is not execution, and this app is not a private relay.
+
+## Public Repository
+
+The repository contains source, pinned dependencies, tests and documentation only. Keep `operations/`, `secrets/`, environment files, private RPC config, signatures and browser backups out of Git. Before pushing:
+
+```bash
+npm run check:public -- --history
+npm test
+npm run test:manager
+npm run build:manager
+```
+
+The public-source check recognises local known credentials/signatures and unsafe tracked paths; it is not a complete secret scanner. Manually review staged changes. GitHub CI runs mocked/local checks without production RPCs or wallet secrets. PlainSafe credit is visible in the application and its original MIT notice remains intact.
 
 See the [operator guide](scripts/safe-batch/README.md) for the wizard, CLI equivalents, private configuration, simulation and proposal safeguards. The older discovery/audit tools below remain available.
 
@@ -57,7 +99,7 @@ The **Simulate on Tenderly** button previews one new virtual environment before 
 
 After management setup/build, `npm start` starts both local origins and initializes an empty rotation batch if needed. Operations, credentials and signature collections are deliberately excluded from Git; prepared signing-data import and a custom `--root` batch are supported.
 
-The default batch contains the five outstanding preparations from 9 October 2026. Drafts remain blocked. Publishing a proposal is separate from executing it, and signatures must not be reused across Safes or chains.
+A fresh checkout starts with an empty batch. Existing private local batches are reused when present; they are not included in this repository. Drafts remain blocked until their outstanding decisions are resolved. Publishing a proposal is separate from executing it, and signatures must not be reused across Safes or chains.
 
 ## Current Target Signer
 

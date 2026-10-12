@@ -1,9 +1,12 @@
 // Adding a chain (SPEC §3.1 "Other chains"): only the chain ID is required.
 import { Schema } from 'effect'
 import { useEffect, useState } from 'react'
+import { Select } from '@/components/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import type { PublicChain } from '@/features/settings/chain-catalog'
+import { ChainPicker as PublicChainPicker } from '@/features/settings/chain-picker'
 import { defaultRpcFor } from '@/features/settings/defaults'
 import { describeError } from '@/lib/errors'
 import { useUrlRpcTest } from '@/queries/rpc-test'
@@ -59,6 +62,7 @@ export function AddChainForm({
   const [name, setName] = useState('')
   const [symbol, setSymbol] = useState('')
   const [known, setKnown] = useState<KnownChain | undefined>()
+  const [catalogueChain, setCatalogueChain] = useState<PublicChain>()
 
   const id = Schema.decodeUnknownOption(ChainId)(Number(idText))
   const chainId = id._tag === 'Some' ? id.value : undefined
@@ -67,18 +71,19 @@ export function AddChainForm({
   useEffect(() => {
     setKnown(undefined)
     if (chainId === undefined) return
-    setUrl(defaultRpcFor(chainId))
+    const selected = catalogueChain?.chainId === chainId ? catalogueChain : undefined
+    setUrl(selected?.rpcs[0] ?? defaultRpcFor(chainId))
     let cancelled = false
     void findViemChain(chainId).then((c) => {
       if (cancelled) return
       setKnown(c)
-      setName(c?.name ?? '')
-      setSymbol(c?.nativeCurrency.symbol ?? '')
+      setName(selected?.name ?? c?.name ?? '')
+      setSymbol(selected?.nativeCurrency.symbol ?? c?.nativeCurrency.symbol ?? '')
     })
     return () => {
       cancelled = true
     }
-  }, [chainId])
+  }, [chainId, catalogueChain])
 
   const rpcUrl = url.trim()
   const urlOk = Schema.is(RpcUrl)(rpcUrl)
@@ -89,16 +94,18 @@ export function AddChainForm({
 
   const add = async () => {
     if (!canAdd) return
+    const explorer = known?.explorer ?? catalogueChain?.explorers[0]?.url
     const chain: ChainSettings = {
       id: chainId,
       name: name.trim(),
-      nativeCurrency: known?.nativeCurrency ?? {
-        name: symbol.trim(),
-        symbol: symbol.trim(),
-        decimals: 18,
-      },
+      nativeCurrency: known?.nativeCurrency ??
+        catalogueChain?.nativeCurrency ?? {
+          name: symbol.trim(),
+          symbol: symbol.trim(),
+          decimals: 18,
+        },
       rpc: { _tag: 'url', url: rpcUrl },
-      ...(known?.explorer ? { explorer: known.explorer } : {}),
+      ...(explorer ? { explorer } : {}),
       ...(known?.multicall3 ? { multicall3: known.multicall3 } : {}),
     }
     await onAdd(chain)
@@ -106,19 +113,46 @@ export function AddChainForm({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-4">
+      <PublicChainPicker
+        onChoose={(chain) => {
+          setCatalogueChain(chain)
+          setIdText(String(chain.chainId))
+        }}
+      />
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="chain-id">Chain ID</Label>
         <Input
           id="chain-id"
           inputMode="numeric"
           value={idText}
-          onChange={(e) => setIdText(e.target.value.trim())}
+          onChange={(e) => {
+            setCatalogueChain(undefined)
+            setIdText(e.target.value.trim())
+          }}
           placeholder="e.g. 8453"
         />
         {exists && <p className="text-sm text-muted-foreground">This chain is already set up.</p>}
       </div>
       {chainId !== undefined && !exists && (
         <>
+          {!!catalogueChain?.rpcs.length && (
+            <label className="flex flex-col gap-1.5 text-sm" htmlFor="catalogue-public-rpc">
+              Public RPC
+              <Select
+                id="catalogue-public-rpc"
+                aria-label="Public RPC"
+                value={catalogueChain.rpcs.includes(url) ? url : 'custom'}
+                onChange={(e) => setUrl(e.target.value === 'custom' ? '' : e.target.value)}
+              >
+                {catalogueChain.rpcs.map((rpc) => (
+                  <option key={rpc} value={rpc}>
+                    {rpc}
+                  </option>
+                ))}
+                <option value="custom">Custom RPC...</option>
+              </Select>
+            </label>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="chain-name">Name</Label>

@@ -5,7 +5,8 @@ import {ethers} from 'ethers';
 import {generateTransactions} from 'safe-owner-manager';
 import {buildSafeTx} from '../prepare-safe-service-proposal.mjs';
 import {CHAINS, SAFE_ABI, normalizeSigning, recoverSignature, safeId} from './core.mjs';
-import {rpcFor, rpcUrl, validateRpcUrl, saveSettings} from './settings.mjs';
+import {rpcFor, validateRpcUrl, saveSettings} from './settings.mjs';
+import {PublicChainCatalog} from '../safedesk/chain-catalog.mjs';
 
 const OWNER_ABI = new ethers.Interface([
   'function swapOwner(address prevOwner,address oldOwner,address newOwner)',
@@ -29,28 +30,10 @@ export function desiredThreshold(value, count) {
   return threshold;
 }
 export class ChainCatalog {
-  constructor(fetcher = fetch) { this.fetcher = fetcher; this.cache = null; }
+  constructor(fetcher = fetch) { this.publicCatalog = fetcher instanceof PublicChainCatalog ? fetcher : new PublicChainCatalog(fetcher); }
   async get() {
-    if (this.cache?.expires > Date.now()) return this.cache.value;
-    let data = [], source = 'Built-in fallback';
-    try {
-      const response = await this.fetcher('https://chainlist.org/rpcs.json', {redirect: 'error', signal: AbortSignal.timeout(10000)});
-      if (!response.ok) throw Error('Catalogue unavailable');
-      data = await response.json();
-      if (!Array.isArray(data)) throw Error('Invalid catalogue');
-      source = 'chainlist.org';
-    } catch { /* Known public endpoints remain available offline. */ }
-    const chains = Object.entries(CHAINS).map(([id, chain]) => {
-      const urls = (data.find(x => x.chainId === Number(id))?.rpc || []).map(x => typeof x === 'string' ? x : x.url);
-      const rpcs = [];
-      for (const value of [chain.rpc, ...urls]) {
-        try { const url = rpcUrl(value); if (!rpcs.includes(url)) rpcs.push(url); } catch { /* Omit non-HTTPS and placeholder endpoints. */ }
-      }
-      return {chainId: Number(id), name: chain.name, defaultRpc: chain.rpc, rpcs: rpcs.slice(0, 30)};
-    });
-    const value = {source, fetchedAt: new Date().toISOString(), chains};
-    this.cache = {value, expires: Date.now() + 60 * 60 * 1000};
-    return value;
+    const value=await this.publicCatalog.get();
+    return {...value,source:value.source==='built-in'?'Built-in fallback':value.source,chains:value.chains.filter(x=>x.rotationSupported).map(x=>({...x,defaultRpc:CHAINS[x.chainId].rpc}))};
   }
 }
 export class SafeWorkflow {

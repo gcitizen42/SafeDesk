@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { HistorySync } from '@/features/history/history-sync'
 import { defaultSettings } from '@/features/settings/defaults'
+import { NetworkScope } from '@/features/settings/network-scope'
 import { usePolicySync } from '@/features/settings/policy-sync'
 import { useSaveSettings, useSettings } from '@/queries/settings'
 import { Routes } from '@/routes'
@@ -61,10 +62,12 @@ const Shell = memo(
           <WalletSync />
           <HistorySync />
           <Router hook={useHashLocation}>
-            <Header />
-            <main>
-              <Routes />
-            </main>
+            <NetworkScope>
+              <Header />
+              <main>
+                <Routes />
+              </main>
+            </NetworkScope>
           </Router>
         </TooltipProvider>
       </WagmiProvider>

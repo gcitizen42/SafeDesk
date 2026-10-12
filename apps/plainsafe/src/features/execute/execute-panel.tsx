@@ -11,6 +11,7 @@ import { describeError } from '@/lib/errors'
 import { shortAddress } from '@/lib/format'
 import { useChain } from '@/queries/settings'
 import type { PackageSignature } from '@/schemas/package'
+import { walletActionsEnabled } from '@/wallet/local-policy'
 import { useExecute } from './use-execute'
 
 export function ExecutePanel(props: {
@@ -107,7 +108,7 @@ export function ExecutePanel(props: {
       <Button
         size="lg"
         data-testid="execute"
-        disabled={!connection.address || execute.isPending}
+        disabled={!walletActionsEnabled() || !connection.address || execute.isPending}
         onClick={() =>
           execute.mutate({
             chainId: props.chainId,

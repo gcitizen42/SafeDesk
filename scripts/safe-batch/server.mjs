@@ -47,7 +47,7 @@ export function createServer(root,{store=new BatchStore(root),port=8770,managerP
       case '/api/inspect':result=await workflow.inspect(input);break;
       case '/api/prepare':if(input.confirm!=='PREPARE')throw Error('Review the complete final owner list and threshold first');result=await workflow.prepare(input);break;
       case '/api/transaction-status':result=await workflow.transactionStatus(input.id,{account:input.account,walletChainId:input.walletChainId});break;
-      case '/api/collect':result=await store.collect(input.id,input.sender,input.signature);break;
+      case '/api/collect':result=await store.collect(input.id,input.sender,input.signature,input.method);break;
       case '/api/simulation':result=store.attach(input.id,input.url,input.document);break;
       case '/api/add':result=await store.add(input.id,input.signing);break;
       case '/api/import':result=await store.importSignatures(input.collection);break;

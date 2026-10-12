@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import {PublicChainCatalog} from './chain-catalog.mjs';
 
 export const defaultDist = path.resolve(import.meta.dirname, '../../apps/plainsafe/dist');
 export const upstreamCommit = '9a23f9ab38501cf09bb5464b2b5684314e9fb7d5';
@@ -10,8 +11,8 @@ export function validPort(value) {
   return port;
 }
 
-// This origin serves built public files only. It has no batch API, secrets or CORS bridge.
-export function createManagerServer({dist = defaultDist, port = 8772, rotationPort = 8770, walletActions = false} = {}) {
+// Only built files and public chain metadata are exposed; never a batch API or secret bridge.
+export function createManagerServer({dist = defaultDist, port = 8772, rotationPort = 8770, walletActions = false, catalog = new PublicChainCatalog()} = {}) {
   validPort(port); validPort(rotationPort);
   if (Number(port) === Number(rotationPort)) throw Error('Management and rotations need separate origins');
   const index = path.join(dist, 'index.html');
@@ -19,11 +20,14 @@ export function createManagerServer({dist = defaultDist, port = 8772, rotationPo
   const origins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
   const security = {'x-content-type-options':'nosniff', 'referrer-policy':'no-referrer', 'x-frame-options':'DENY', 'cross-origin-resource-policy':'same-origin', 'content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https: wss: http://localhost:* http://127.0.0.1:*; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"};
   const reply = (res, status, body) => {res.writeHead(status, {...security, 'content-type':'text/plain; charset=utf-8', 'cache-control':'no-store'});res.end(body);};
-  return http.createServer((req,res) => {
+  return http.createServer(async(req,res) => {
     if (!origins.has(`http://${req.headers.host}`) || (req.headers.origin && !origins.has(req.headers.origin))) return reply(res,403,'Unexpected local origin');
     if (!['GET','HEAD'].includes(req.method)) return reply(res,405,'Read-only file server');
     let pathname;
     try {pathname = decodeURIComponent(new URL(req.url, `http://127.0.0.1:${port}`).pathname);} catch {return reply(res,400,'Invalid path');}
+    if(pathname==='/api/chains'){
+      try{const value=req.method==='HEAD'?null:await catalog.get();res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});return res.end(value?JSON.stringify(value):'');}catch{return reply(res,503,'Public chain catalogue unavailable');}
+    }
     if (pathname === '/.well-known/safedesk-manager') {
       res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});
       return res.end(req.method === 'HEAD' ? '' : JSON.stringify({app:'SafeDesk Safe Management',upstreamCommit,rotationOrigin:`http://127.0.0.1:${rotationPort}`,walletActions:walletActions === true}));

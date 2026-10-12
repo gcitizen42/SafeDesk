@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useNetworkScope } from '@/features/settings/network-scope'
 import { describeError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useEnsNames, useResolvedAddress } from '@/queries/ens'
@@ -20,7 +21,10 @@ import { hasSafe, safeRecord } from './store'
 
 export function AddSafe() {
   const settings = useLoadedSettings()
-  const [chainId, setChainId] = useState<number | undefined>(settings.chains[0]?.id)
+  const { network } = useNetworkScope()
+  const [chainId, setChainId] = useState<number | undefined>(
+    network === 'all' ? settings.chains[0]?.id : network,
+  )
   const [addressText, setAddressText] = useState('')
   const [target, setTarget] = useState<{ chainId: number; address: Address } | undefined>()
 

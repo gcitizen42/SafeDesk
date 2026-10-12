@@ -4,6 +4,8 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createServer} from '../safe-batch/server.mjs';
 import {createManagerServer,validPort} from './manager-server.mjs';
+import {PublicChainCatalog} from './chain-catalog.mjs';
+import {ChainCatalog} from '../safe-batch/workflow.mjs';
 
 export const project = path.resolve(import.meta.dirname,'../..');
 export function defaultBatch() {
@@ -17,8 +19,9 @@ const listen = (server,port) => new Promise((resolve,reject) => {
 const close = server => new Promise(resolve => server.listening ? server.close(resolve) : resolve());
 export async function startDesk({root = defaultBatch(),port = 8770,managerPort = 8772,dist,walletActions = false} = {}) {
   port = validPort(port); managerPort = validPort(managerPort);
-  const manager = createManagerServer({port:managerPort,rotationPort:port,dist,walletActions});
-  const rotations = createServer(path.resolve(root),{port,managerPort});
+  const catalog = new PublicChainCatalog();
+  const manager = createManagerServer({port:managerPort,rotationPort:port,dist,walletActions,catalog});
+  const rotations = createServer(path.resolve(root),{port,managerPort,catalog:new ChainCatalog(catalog)});
   try {await listen(manager,managerPort); await listen(rotations,port);}
   catch (error) {await Promise.all([close(manager),close(rotations)]);throw error;}
   return {manager,rotations,close:() => Promise.all([close(manager),close(rotations)])};

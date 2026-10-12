@@ -1,6 +1,7 @@
 // The main button (SPEC §3.4): who may sign, and the typed confirmation for delegatecall.
 import { useState } from 'react'
 import { useConnection } from 'wagmi'
+import { Select } from '@/components/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -9,9 +10,11 @@ import {
   needsTypedConfirmation,
   signingRefused,
 } from '@/core/safety-rules'
+import type { SigningMethod } from '@/core/signatures'
 import type { SafeSnapshot } from '@/features/safes/load-safe'
 import { describeError } from '@/lib/errors'
 import { shortAddress } from '@/lib/format'
+import { walletActionsEnabled } from '@/wallet/local-policy'
 import type { ReviewContext } from './review-screen'
 
 const CONFIRM_WORD = 'DELEGATECALL'
@@ -48,7 +51,7 @@ function signState(args: {
 export function SignButton(
   props: ReviewContext & {
     signers: readonly string[]
-    onSign: () => void
+    onSign: (method: SigningMethod) => void
     busy: boolean
     error: Error | null
     approvedBy?: readonly string[] | undefined
@@ -60,6 +63,7 @@ export function SignButton(
 ) {
   const connection = useConnection()
   const [typed, setTyped] = useState('')
+  const [method, setMethod] = useState<SigningMethod>('eip712')
   const state = signState({
     pending: props.pending,
     banners: props.banners,
@@ -78,6 +82,19 @@ export function SignButton(
       : 'Sign'
   return (
     <div className="flex flex-col items-end gap-2">
+      <label className="flex items-center gap-2 text-sm" htmlFor="transaction-signing-method">
+        Signing method
+        <Select
+          id="transaction-signing-method"
+          aria-label="Signing method"
+          value={method}
+          onChange={(e) => setMethod(e.target.value as SigningMethod)}
+          disabled={props.busy}
+        >
+          <option value="eip712">EIP-712 typed data</option>
+          <option value="eth_sign">Ledger hash / personal_sign</option>
+        </Select>
+      </label>
       {state.kind === 'no-wallet' && (
         <p className="text-sm text-muted-foreground">
           Connect an owner's wallet (top right) to sign.
@@ -122,8 +139,10 @@ export function SignButton(
         <Button
           size="lg"
           data-testid="main-action"
-          disabled={state.kind !== 'can-sign' || props.busy || unconfirmed}
-          onClick={props.onSign}
+          disabled={
+            !walletActionsEnabled() || state.kind !== 'can-sign' || props.busy || unconfirmed
+          }
+          onClick={() => props.onSign(method)}
         >
           {state.kind === 'checking'
             ? 'Checking…'
@@ -140,7 +159,7 @@ export function SignButton(
             variant="outline"
             size="sm"
             data-testid="approve-onchain"
-            disabled={props.busy || props.approveBusy || unconfirmed}
+            disabled={!walletActionsEnabled() || props.busy || props.approveBusy || unconfirmed}
             onClick={props.onApprove}
           >
             {props.approveBusy ? 'Waiting for the approval…' : 'Approve onchain instead'}

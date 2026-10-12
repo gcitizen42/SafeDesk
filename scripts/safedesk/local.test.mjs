@@ -26,7 +26,8 @@ test('only isolated localhost ports can be selected', () => {
 });
 test('management serves only built assets, rejects other origins and keeps wallet actions off', async t => {
   const {root,dist} = fixture(t),port = await freePort(),rotationPort = await freePort();
-  const server = createManagerServer({dist,port,rotationPort});
+  let catalogueReads=0;const catalogue={source:'built-in',fetchedAt:new Date().toISOString(),chains:[{chainId:1,name:'Ethereum',rpcs:['https://ethereum.publicnode.com'],rotationSupported:true}]};
+  const server = createManagerServer({dist,port,rotationPort,catalog:{get:async()=>{catalogueReads++;return catalogue;}}});
   await new Promise(r => server.listen(port,'127.0.0.1',r));t.after(() => new Promise(r => server.close(r)));
   const base = `http://127.0.0.1:${port}`;
   const res = await fetch(base),html = await res.text();
@@ -42,6 +43,8 @@ test('management serves only built assets, rejects other origins and keeps walle
   fs.symlinkSync(path.join(root,'secret.env'),path.join(dist,'assets','escape.js'));
   assert.equal((await fetch(base+'/assets/escape.js')).status,404);
   assert.equal((await (await fetch(base+'/.well-known/safedesk-manager')).json()).walletActions,false);
+  const publicCatalogue=await fetch(base+'/api/chains');assert.equal(publicCatalogue.status,200);assert.deepEqual(await publicCatalogue.json(),catalogue);assert.equal(catalogueReads,1);assert.equal(publicCatalogue.headers.get('access-control-allow-origin'),null);
+  assert.equal((await fetch(base+'/api/chains',{headers:{origin:`http://127.0.0.1:${rotationPort}`}})).status,403);assert.equal(catalogueReads,1);
 });
 test('launcher starts both origins without granting cross-origin batch access or collecting signatures', async t => {
   const {root,dist} = fixture(t),port = await freePort(),managerPort = await freePort();

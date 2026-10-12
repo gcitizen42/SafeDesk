@@ -2,6 +2,7 @@ import {ethers} from '/ethers.js';
 let token,operations=[],chains={},tenderly={},settings={},simulationToken=null,simulationId=null,selectedId=null,account=null,reviewToken=null,busy=false;
 const selected=new Set(),checks=new Map();
 let setupMode=null,setupStep=1,snapshot=null,catalog=null,loadedSafeInput=null;
+let networkFilter='all',signingMethod='eip712';
 const $=selector=>document.querySelector(selector);
 const icons=()=>window.lucide?.createIcons();
 const text=(tag,value,cls)=>{const e=document.createElement(tag);e.textContent=value;if(cls)e.className=cls;return e;};
@@ -12,13 +13,15 @@ async function perform(fn){if(busy)return;busy=true;render();try{await fn();}cat
 async function load(){const b=await api('batch');token=b.token;operations=b.operations;chains=b.chains;tenderly=b.tenderly;settings=b.settings;checks.clear();if(!selectedId||!operations.some(x=>x.id===selectedId))selectedId=operations[0]?.id;render();if(b.setupRequired&&!setupMode)await beginSetup('first');}
 function button(label,icon,fn,disabled=false){const b=text('button',label);if(icon){const i=document.createElement('i');i.dataset.lucide=icon;b.prepend(i);}b.disabled=disabled||busy;b.onclick=()=>perform(fn);return b;}
 const op=()=>operations.find(x=>x.id===selectedId);
+const visibleOperations=()=>operations.filter(x=>networkFilter==='all'||x.chainId===Number(networkFilter));
 function render(){
  $('#batchCount').textContent=operations.length?operations.length+' operations':'Setup';$('#selectedCount').textContent=selected.size?'('+selected.size+')':'';$('#review').disabled=busy||!selected.size;
  $('#batchToolbar').hidden=!!setupMode;$('#batchWorkspace').hidden=!!setupMode;$('#setup').hidden=!setupMode;
  $('#settings').disabled=busy||!!setupMode;$('#add').disabled=busy;$('#preparedImport').disabled=busy;
  if(setupMode)renderSetup();
+ const network=$('#networkFilter');network.replaceChildren(text('option','All networks'));network.options[0].value='all';for(const id of [...new Set(operations.map(x=>x.chainId))]){const option=text('option',chains[id].name);option.value=id;network.append(option);}network.value=networkFilter;network.disabled=busy||!!setupMode;
  const list=$('#operations');list.replaceChildren();
- for(const item of operations){const row=document.createElement('div');row.className='operation'+(item.id===selectedId?' active':'');const check=document.createElement('input');check.type='checkbox';check.setAttribute('aria-label','Select '+item.id);check.checked=selected.has(item.id);check.disabled=busy||item.draft||!item.simulation||!item.signatures.length;check.onchange=()=>{check.checked?selected.add(item.id):selected.delete(item.id);render();};const detail=document.createElement('div');detail.append(text('strong',item.id),text('small',item.chain+' · '+short(item.safe)));const tag=text('span',item.result?.status==='proposed'?'Proposed':item.draft?'Draft':item.signatures.length?item.signatures.length+' collected':item.simulation?'Ready to sign':'Simulation needed','tag '+(item.draft?'pending':item.simulation?'good':''));detail.append(tag);row.append(check,detail);detail.onclick=()=>{selectedId=item.id;render();};list.append(row);}
+ for(const item of visibleOperations()){const row=document.createElement('div');row.className='operation'+(item.id===selectedId?' active':'');const check=document.createElement('input');check.type='checkbox';check.setAttribute('aria-label','Select '+item.id);check.checked=selected.has(item.id);check.disabled=busy||item.draft||!item.simulation||!item.signatures.length;check.onchange=()=>{check.checked?selected.add(item.id):selected.delete(item.id);render();};const detail=document.createElement('div');detail.append(text('strong',item.id),text('small',item.chain+' · '+short(item.safe)));const tag=text('span',item.result?.status==='proposed'?'Proposed':item.draft?'Draft':item.signatures.length?item.signatures.length+' collected':item.simulation?'Ready to sign':'Simulation needed','tag '+(item.draft?'pending':item.simulation?'good':''));detail.append(tag);row.append(check,detail);detail.onclick=()=>{selectedId=item.id;render();};list.append(row);}
  const item=op(),detail=$('#detail');detail.replaceChildren();if(!item)return;
  const head=document.createElement('div');head.className='detail-head';const heading=document.createElement('div');heading.append(text('h2',item.id),text('address',item.safe));head.append(heading,button('Refresh transaction','refresh-cw',()=>refreshTransaction(item)));detail.append(head);
  const checked=checks.get(item.id),facts=document.createElement('dl');facts.className='facts';for(const [name,value]of[['Network',item.chain+' · '+item.chainId],['Prepared nonce',item.nonce],['Current approvals',(checked?.threshold||item.currentThreshold)+' / '+(checked?.owners||item.owners).length],['Proposed approvals',item.proposedThreshold===null?'See payload':item.proposedThreshold+' / '+(item.newOwners?.length||'?')]]){const wrap=document.createElement('div');wrap.className='fact';wrap.append(text('dt',name),text('dd',value));facts.append(wrap);}detail.append(facts);
@@ -35,12 +38,14 @@ function render(){
  const signatures=document.createElement('section');signatures.className='section';signatures.append(text('span','Collected signatures','section-label'));for(const sig of item.signatures)signatures.append(text('p',sig.sender+' · '+sig.mode,'signers'));if(!item.signatures.length)signatures.append(text('p','No signature collected','note'));if(item.draft)signatures.append(text('p','Threshold decision outstanding','note'));
  const live=checks.get(item.id),owner=account&&(live?.owners||item.owners).some(a=>a.toLowerCase()===account.toLowerCase());if(account&&!owner)signatures.append(text('p','The connected account is not a current owner. An existing owner must sign this operation.','note'));
  const changed=live&&(!live.unchanged||live.executed||!live.hashMatches||live.conflicts.length||!live.serviceKnown);
- const actions=document.createElement('div');actions.className='sign-actions';actions.append(button('Sign and collect','pen-line',()=>sign(item,false),!owner||changed||item.draft||!item.simulation),button('Ledger hash signing','usb',()=>sign(item,true),!owner||changed||item.draft||!item.simulation),button('Paste signature','clipboard',()=>{$('#pasteForm').reset();$('#pasteForm').elements.sender.value=account||'';$('#pasteDialog').showModal();},changed||item.draft||!item.simulation),button('Next Safe','arrow-right',()=>{selectedId=operations[(operations.findIndex(x=>x.id===item.id)+1)%operations.length].id;render();}));signatures.append(actions);detail.append(signatures);
+ const methodLabel=text('label','Signing method','sign-method'),method=document.createElement('select');method.setAttribute('aria-label','Signing method');for(const [value,label]of[['eip712','EIP-712 typed data'],['eth_sign','Ledger hash / personal_sign']]){const option=text('option',label);option.value=value;method.append(option);}method.value=signingMethod;method.disabled=busy;method.onchange=()=>{signingMethod=method.value;};methodLabel.append(method);signatures.append(methodLabel);
+ const actions=document.createElement('div');actions.className='sign-actions';actions.append(button('Sign and collect',signingMethod==='eip712'?'pen-line':'usb',()=>sign(item,signingMethod),!owner||changed||item.draft||!item.simulation),button('Paste signature','clipboard',()=>{$('#pasteForm').reset();$('#pasteForm').elements.sender.value=account||'';$('#pasteDialog').showModal();},changed||item.draft||!item.simulation),button('Next Safe','arrow-right',()=>{const visible=visibleOperations();selectedId=visible[(visible.findIndex(x=>x.id===item.id)+1)%visible.length]?.id;render();}));signatures.append(actions);detail.append(signatures);
  const payload=document.createElement('details');payload.append(text('summary','Transaction payload'));payload.append(text('pre',JSON.stringify(item.signing.message,null,2),'payload'));detail.append(payload);
  if(item.result){detail.append(text('p',item.result.status==='proposed'?'Proposal published':item.result.message,'note'));if(item.result.safeUrl){const a=text('a','Open Safe queue');a.href=item.result.safeUrl;a.target='_blank';a.rel='noopener noreferrer';detail.append(a);}}
  icons();
 }
-async function sign(item,fallback){
+async function sign(item,method){
+ if(!['eip712','eth_sign'].includes(method))throw Error('Choose a supported signing method');
  const checked=await api('check',{id:item.id});if(!checked.result.owners.some(a=>a.toLowerCase()===account.toLowerCase()))throw Error('Connected account is not a current owner');
  const target='0x'+item.chainId.toString(16);if((await window.ethereum.request({method:'eth_chainId'})).toLowerCase()!==target){
   try{await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:target}]});}catch(e){
@@ -53,9 +58,10 @@ async function sign(item,fallback){
  const computed=ethers.TypedDataEncoder.hash(item.signing.domain,item.signing.types,item.signing.message);if(computed!==item.hash)throw Error('Hash mismatch');
  status('Confirm '+item.id+' on your Ledger...');
  const payload=ethers.TypedDataEncoder.getPayload(item.signing.domain,item.signing.types,item.signing.message);
- const raw=await window.ethereum.request(fallback?{method:'personal_sign',params:[item.hash,account]}:{method:'eth_signTypedData_v4',params:[account,JSON.stringify(payload)]});
- await api('collect',{id:item.id,sender:account,signature:raw});selected.add(item.id);await load();status('Signature verified and collected for '+item.id+'.');
+ const raw=await window.ethereum.request(method==='eth_sign'?{method:'personal_sign',params:[item.hash,account]}:{method:'eth_signTypedData_v4',params:[account,JSON.stringify(payload)]});
+ await api('collect',{id:item.id,sender:account,signature:raw,method});selected.add(item.id);await load();status('Signature verified and collected for '+item.id+'.');
 }
+$('#networkFilter').onchange=e=>{networkFilter=e.target.value;selectedId=visibleOperations()[0]?.id;checks.clear();render();};
 $('#connect').onclick=()=>perform(async()=>{if(!window.ethereum)throw Error('Open this URL in Chrome or Brave with MetaMask and your Ledger account.');[account]=await window.ethereum.request({method:'eth_requestAccounts'});$('#connect').querySelector('span').textContent=short(account);checks.clear();render();if(op())await refreshTransaction(op());else status('Wallet connected.');});
 window.ethereum?.on?.('accountsChanged',accounts=>{account=accounts[0]||null;checks.clear();$('#connect').querySelector('span').textContent=account?short(account):'Connect Ledger wallet';render();});
 window.ethereum?.on?.('chainChanged',()=>{checks.clear();render();});

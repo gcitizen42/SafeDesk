@@ -1,11 +1,12 @@
 // #/safe/:chainId/:address/review: the builder's unsaved draft (SPEC §9.4).
 import { Share2 } from 'lucide-react'
-import { Link, Redirect, useLocation } from 'wouter'
+import { Redirect, useLocation } from 'wouter'
 import { NotFound } from '@/components/layout/not-found'
 import { Button } from '@/components/ui/button'
 import { makePackage } from '@/core/package'
 import { signingRefused } from '@/core/safety-rules'
-import { clearDraft, type Draft, getDraft } from '@/features/builder/draft'
+import type { SigningMethod } from '@/core/signatures'
+import { clearDraft, type Draft, getDraft, setDraft } from '@/features/builder/draft'
 import type { SafeSnapshot } from '@/features/safes/load-safe'
 import { useSafeParams } from '@/features/safes/use-safe-params'
 import { ReviewScreen } from './review-screen'
@@ -27,7 +28,11 @@ function DraftReviewFor({ draft }: { draft: Draft }) {
   const base = `/safe/${draft.chainId}/${draft.safe}`
 
   /** Save the draft as a package, signed or not, and open it. */
-  const saveDraft = (safe: SafeSnapshot | undefined, withSignature: boolean) => {
+  const saveDraft = (
+    safe: SafeSnapshot | undefined,
+    withSignature: boolean,
+    method?: SigningMethod,
+  ) => {
     if (safe?.authenticity.status !== 'verified') return
     const pkg = makePackage({
       chainId: draft.chainId,
@@ -37,7 +42,7 @@ function DraftReviewFor({ draft }: { draft: Draft }) {
     })
     // Only while this screen is open; the draft is cleared by the mutation either way
     signAndSave.mutate(
-      { pkg, withSignature },
+      { pkg, withSignature, method },
       { onSuccess: (v) => navigate(`${base}/tx/${v.hashes.safeTx}`) },
     )
   }
@@ -56,11 +61,18 @@ function DraftReviewFor({ draft }: { draft: Draft }) {
             signers={[]}
             busy={signAndSave.isPending}
             error={signAndSave.error}
-            onSign={() => saveDraft(ctx.safe, true)}
+            onSign={(method) => saveDraft(ctx.safe, true, method)}
           />
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" asChild>
-              <Link href={`${base}/new/${draft.preset}`}>Edit</Link>
+            <Button
+              variant="ghost"
+              disabled={signAndSave.isPending}
+              onClick={() => {
+                setDraft({ ...draft, preset: 'raw', tx: { ...draft.tx } })
+                navigate(`${base}/new/raw`)
+              }}
+            >
+              Edit
             </Button>
             <Button
               variant="outline"

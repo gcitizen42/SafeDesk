@@ -29,7 +29,7 @@ const PackageTx = Schema.Struct({
 
 export const PackageSignature = Schema.Struct({
   signer: Address,
-  kind: Schema.Literal('eip712'),
+  kind: Schema.Literal('eip712', 'eth_sign'),
   data: Hex.pipe(Schema.filter((h) => h.length === 132 || 'Expected a 65-byte signature')),
 })
 export type PackageSignature = typeof PackageSignature.Type

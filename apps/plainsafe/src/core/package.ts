@@ -4,7 +4,7 @@ import { Either, ParseResult, Schema } from 'effect'
 import { type Address, getAddress, type Hex } from 'viem'
 import { type PackageSignature, SafeTxPackage } from '@/schemas/package'
 import { type SafeTx, type SafeTxHashes, safeTxHashes } from './safe-tx'
-import { byAddress, recoverSigner } from './signatures'
+import { byAddress, recoverSafeSignature } from './signatures'
 
 export const SUPPORTED_PACKAGE_VERSIONS = new Set(['1.3.0', '1.4.1', '1.5.0'])
 
@@ -136,13 +136,13 @@ export async function verifyPackage(
   for (const s of pkg.signatures) {
     const signer = getAddress(s.signer)
     if (seen.has(signer)) continue // duplicates are dropped (SPEC §5.3)
-    const recovered = await recoverSigner(hashes.safeTx, s.data)
+    const recovered = await recoverSafeSignature(hashes.safeTx, s.data, s.kind)
     if (recovered !== signer) {
       rejected.push({ signer, reason: 'belongs to a different transaction or is corrupted' })
       continue
     }
     seen.add(signer)
-    signatures.push({ signer, kind: 'eip712', data: s.data.toLowerCase() as Hex })
+    signatures.push({ signer, kind: s.kind, data: s.data.toLowerCase() as Hex })
   }
   return Either.right({ pkg: { ...pkg, signatures }, tx, hashes, signatures, rejected })
 }

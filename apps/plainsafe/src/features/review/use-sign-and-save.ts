@@ -5,6 +5,7 @@ import { Either } from 'effect'
 import type { Address } from 'viem'
 import { mergeSignatures, type VerifiedPackage, verifyPackage } from '@/core/package'
 import type { SafeTx } from '@/core/safe-tx'
+import type { SigningMethod } from '@/core/signatures'
 import { useSavePackage } from '@/queries/packages'
 import type { SafeTxPackage } from '@/schemas/package'
 import { useSignSafeTx } from '@/wallet/use-sign'
@@ -22,8 +23,16 @@ export function useSignAndSave(
   const sign = useSignSafeTx()
   const save = useSavePackage()
   return useMutation({
-    mutationFn: async ({ pkg, withSignature }: { pkg: SafeTxPackage; withSignature: boolean }) => {
-      const added = withSignature ? [await sign.mutateAsync({ chainId, safe, tx })] : []
+    mutationFn: async ({
+      pkg,
+      withSignature,
+      method,
+    }: {
+      pkg: SafeTxPackage
+      withSignature: boolean
+      method?: SigningMethod
+    }) => {
+      const added = withSignature ? [await sign.mutateAsync({ chainId, safe, tx, method })] : []
       const v = await verifyPackage({ ...pkg, signatures: mergeSignatures(pkg.signatures, added) })
       if (Either.isLeft(v)) throw new Error(`Couldn't save the transaction: ${v.left._tag}`)
       await save.mutateAsync(v.right)

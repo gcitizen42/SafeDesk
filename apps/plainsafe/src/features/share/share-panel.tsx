@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Check, Copy, Download } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { exportBuilderJson, signingData } from '@/core/builder-json'
 import { encodePayload, packageFileName, shareCode, shareLink } from '@/core/package'
 import { downloadJson } from '@/lib/download'
 import { keys } from '@/queries/keys'
@@ -41,6 +42,11 @@ function CopyAction({
 }
 
 export function SharePanel({ pkg }: { pkg: SafeTxPackage }) {
+  const [operationId, setOperationId] = useState(
+    `tx-${pkg.chainId}-${pkg.tx.nonce}-${pkg.hashes.safeTx.slice(-6)}`,
+  )
+  const validId = /^[a-z0-9][a-z0-9-]{0,63}$/.test(operationId)
+  const proposalSupported = [1, 10, 137, 42161, 8453, 60808].includes(pkg.chainId)
   const payload = useQuery({
     queryKey: keys.sharePayload(pkg.hashes.safeTx, pkg.signatures.map((s) => s.signer).join(',')),
     queryFn: () => encodePayload(pkg),
@@ -54,7 +60,7 @@ export function SharePanel({ pkg }: { pkg: SafeTxPackage }) {
       <p className="text-sm text-muted-foreground">
         The link carries the transaction and {pkg.signatures.length} signature
         {pkg.signatures.length === 1 ? '' : 's'} after the “#”, which browsers never send to a
-        server. Co-signers can open it in any copy of Plain Safe, or paste the code.
+        server. Co-signers can open it in SafeDesk, or paste the code.
       </p>
       <div className="flex flex-wrap gap-2">
         <CopyAction label="Copy link" value={link} testId="copy-link" />
@@ -67,6 +73,64 @@ export function SharePanel({ pkg }: { pkg: SafeTxPackage }) {
           <Download /> Download JSON
         </Button>
       </div>
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <label className="text-sm">
+          Proposal operation name
+          <input
+            aria-label="Proposal operation name"
+            className="mt-1 h-9 w-full rounded-lg border px-2"
+            value={operationId}
+            onChange={(e) => setOperationId(e.target.value)}
+            spellCheck={false}
+          />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={!validId}
+            onClick={() => downloadJson(`builder-${operationId}.json`, exportBuilderJson(pkg))}
+          >
+            <Download />
+            Safe Builder JSON
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!validId || !proposalSupported}
+            onClick={() => downloadJson(`${operationId}-signing-data.json`, signingData(pkg))}
+          >
+            <Download />
+            Proposal signing data
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!validId || !proposalSupported || !pkg.signatures.length}
+            onClick={() =>
+              downloadJson(`${operationId}-signatures.json`, {
+                version: 1,
+                operations: [
+                  {
+                    id: operationId,
+                    signing: signingData(pkg),
+                    signatures: pkg.signatures.map((s) => ({
+                      sender: s.signer,
+                      signature: s.data,
+                    })),
+                  },
+                ],
+              })
+            }
+          >
+            <Download />
+            Proposal signatures
+          </Button>
+        </div>
+      </div>
+      {pkg.tx.operation === 1 && (
+        <p className="text-sm text-amber-700">
+          DELEGATECALL (1) must be preserved when importing elsewhere. Verify the operation and full
+          SafeTx hash before signing.
+        </p>
+      )}
       {link && link.length > LINK_LIMIT && (
         <p className="text-sm text-amber-700 dark:text-amber-400">
           This link is {Math.round(link.length / 1024)} KB. Chat apps often cut long links; send the

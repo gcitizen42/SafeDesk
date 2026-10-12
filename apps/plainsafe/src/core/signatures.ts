@@ -15,6 +15,49 @@ import {
 } from 'viem'
 
 type SignatureProblem = 'not-65-bytes' | 'bad-v'
+export type SigningMethod = 'eip712' | 'eth_sign'
+
+export function signatureMethod(data: Hex): SigningMethod | undefined {
+  if (!isHex(data) || size(data) !== 65) return undefined
+  const v = hexToNumber(slice(data, 64, 65))
+  return v === 27 || v === 28 ? 'eip712' : v === 31 || v === 32 ? 'eth_sign' : undefined
+}
+
+export function normalizePersonalSignature(data: Hex): Hex {
+  const normalized = normalizeV(data)
+  if (checkEip712SignatureBytes(normalized))
+    throw new Error('Invalid wallet personal-sign signature')
+  return concat([
+    slice(normalized, 0, 64),
+    numberToHex(hexToNumber(slice(normalized, 64, 65)) + 4, { size: 1 }),
+  ])
+}
+
+export async function recoverSafeSignature(
+  hash: Hex,
+  data: Hex,
+  expected?: SigningMethod,
+): Promise<Address | undefined> {
+  const method = signatureMethod(data)
+  if (!method || (expected && expected !== method)) return undefined
+  try {
+    const raw =
+      method === 'eth_sign'
+        ? concat([
+            slice(data, 0, 64),
+            numberToHex(hexToNumber(slice(data, 64, 65)) - 4, { size: 1 }),
+          ])
+        : data
+    return getAddress(
+      await recoverAddress({
+        hash: method === 'eth_sign' ? hashMessage({ raw: hash }) : hash,
+        signature: raw,
+      }),
+    )
+  } catch {
+    return undefined
+  }
+}
 
 /** Only plain EOA EIP-712 signatures are accepted (SPEC §5.2: no eth_sign, no EIP-1271). */
 export function checkEip712SignatureBytes(data: Hex): SignatureProblem | undefined {

@@ -22,10 +22,11 @@ import { useNativeCurrency } from '@/queries/settings'
 import { useSwapContracts } from '@/queries/swap'
 import { useBalances } from '@/queries/tokens'
 import { ContractCall } from './contract-call'
-import { setDraft } from './draft'
+import { getDraft, setDraft } from './draft'
 import { type BuiltCall, OwnersAndThreshold, SendErc20, SendNative } from './presets'
+import { RawTransaction } from './raw-transaction'
 
-const PRESETS = ['eth', 'erc20', 'call', 'owners', 'swap'] as const
+const PRESETS = ['eth', 'erc20', 'call', 'owners', 'raw', 'swap'] as const
 type Preset = (typeof PRESETS)[number]
 
 function usePresetMeta(chainId: number) {
@@ -43,6 +44,7 @@ function usePresetMeta(chainId: number) {
       icon: Users,
       blurb: 'Add, remove or replace owners, or change the threshold.',
     },
+    raw: { title: 'Transaction Builder', icon: FileCode2, blurb: 'Raw SafeTx and Builder JSON' },
     swap: {
       title: 'Swap',
       icon: Repeat,
@@ -183,6 +185,8 @@ function parseAdvanced(
 
 function Form({ safe, preset }: { safe: SafeSnapshot; preset: Preset }) {
   const [, navigate] = useLocation()
+  const seed = getDraft(safe.chainId, safe.address)
+  const initialTx = seed?.preset === preset ? seed.tx : undefined
   const [built, setBuilt] = useState<BuiltCall>()
   const onchainNonce = safe.nonce ?? 0n
   const queue = usePackages(safe.chainId, safe.address)
@@ -190,10 +194,20 @@ function Form({ safe, preset }: { safe: SafeSnapshot; preset: Preset }) {
   const queued = (queue.data?.packages ?? [])
     .filter((p) => !p.execution)
     .map((p) => p.verified.tx.nonce)
-  const [nonceText, setNonceText] = useState<string>()
+  const [nonceText, setNonceText] = useState<string | undefined>(initialTx?.nonce.toString())
   const defaultNonce = nextNonce(onchainNonce, queued)
   const nonceValue = nonceText ?? defaultNonce.toString()
-  const [adv, setAdv] = useState(ADVANCED)
+  const [adv, setAdv] = useState(
+    initialTx
+      ? {
+          safeTxGas: initialTx.safeTxGas.toString(),
+          baseGas: initialTx.baseGas.toString(),
+          gasPrice: initialTx.gasPrice.toString(),
+          gasToken: initialTx.gasToken,
+          refundReceiver: initialTx.refundReceiver,
+        }
+      : ADVANCED,
+  )
 
   const nonce = num(nonceValue)
   const advanced = parseAdvanced(adv)
@@ -225,11 +239,31 @@ function Form({ safe, preset }: { safe: SafeSnapshot; preset: Preset }) {
     erc20: SendErc20,
     call: ContractCall,
     owners: OwnersAndThreshold,
+    raw: undefined,
     swap: SwapPreset,
   }[preset]
   return (
     <div className="flex flex-col gap-6">
-      <Preset safe={safe} onResult={setBuilt} />
+      {preset === 'raw' ? (
+        <RawTransaction
+          safe={safe}
+          initialTx={initialTx}
+          nonce={nonce ?? onchainNonce}
+          onResult={setBuilt}
+          onImport={(tx) => {
+            setNonceText(tx.nonce.toString())
+            setAdv({
+              safeTxGas: tx.safeTxGas.toString(),
+              baseGas: tx.baseGas.toString(),
+              gasPrice: tx.gasPrice.toString(),
+              gasToken: tx.gasToken,
+              refundReceiver: tx.refundReceiver,
+            })
+          }}
+        />
+      ) : (
+        Preset && <Preset safe={safe} onResult={setBuilt} />
+      )}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="nonce">Nonce</Label>
         <Input

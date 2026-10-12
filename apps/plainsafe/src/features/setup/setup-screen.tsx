@@ -43,10 +43,7 @@ export function SetupScreen({ settings }: { settings: Settings }) {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-8">
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Set up Plain Safe</h1>
-        <p className="text-lg" data-testid="promise">
-          Plain Safe talks to one RPC you choose. Nothing else, unless you turn it on.
-        </p>
+        <h1 className="text-2xl font-semibold">Set up SafeDesk</h1>
       </div>
 
       {drafts.map((draft, i) => (

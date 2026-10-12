@@ -6,6 +6,7 @@ import { explorerUrl } from '@/chains'
 import { Callout } from '@/components/callout'
 import { NotFound } from '@/components/layout/not-found'
 import { Button } from '@/components/ui/button'
+import { unsignedEditDraft } from '@/core/builder-json'
 import { cancelTx, isCancel } from '@/core/builders'
 import type { VerifiedPackage } from '@/core/package'
 import { setDraft } from '@/features/builder/draft'
@@ -92,6 +93,7 @@ function PackageSections({
   const approvals = useApprovals(chainId, snapshot, safeTxHash)
   const signAndSave = useSignAndSave(chainId, safe, tx)
   const approve = useApproveHash()
+  const [, navigate] = useLocation()
   return (
     <>
       {execution && <ExecutionState chainId={chainId} execution={execution} />}
@@ -103,13 +105,23 @@ function PackageSections({
         approvedBy={approvals.data}
       />
       <SharePanel pkg={pkg} />
+      <Button
+        variant="outline"
+        className="self-end"
+        onClick={() => {
+          setDraft(unsignedEditDraft(pkg))
+          navigate(`/safe/${chainId}/${safe}/new/raw`)
+        }}
+      >
+        Edit as new draft
+      </Button>
       {!execution && (
         <div className="flex flex-col gap-4">
           <SignButton
             {...ctx}
             signers={signatures.map((s) => s.signer)}
             approvedBy={approvals.data}
-            onSign={() => signAndSave.mutate({ pkg, withSignature: true })}
+            onSign={(method) => signAndSave.mutate({ pkg, withSignature: true, method })}
             busy={signAndSave.isPending}
             error={signAndSave.error}
             onApprove={

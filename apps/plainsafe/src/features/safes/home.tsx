@@ -1,6 +1,7 @@
 import { Import, Plus, ShieldCheck } from 'lucide-react'
 import { Link } from 'wouter'
 import { Button } from '@/components/ui/button'
+import { useNetworkScope } from '@/features/settings/network-scope'
 import { shortAddress } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useEnsName } from '@/queries/ens'
@@ -39,6 +40,7 @@ export function Home() {
 }
 
 function SafeList({ store, empty }: { store: 'safes' | 'recent'; empty: string }) {
+  const { network } = useNetworkScope()
   const list = useSafeList(store)
   const chainName = useChainName()
   const invalid = list.data?.invalid.length ?? 0
@@ -46,9 +48,11 @@ function SafeList({ store, empty }: { store: 'safes' | 'recent'; empty: string }
     <div className="flex flex-col gap-2">
       {list.data?.safes.length === 0 && <p className="text-muted-foreground">{empty}</p>}
       <ul className="flex flex-col divide-y rounded-lg border empty:hidden" data-testid="safe-list">
-        {list.data?.safes.map((s) => (
-          <SafeRow key={`${s.chainId}:${s.address}`} safe={s} chainName={chainName(s.chainId)} />
-        ))}
+        {list.data?.safes
+          .filter((s) => network === 'all' || s.chainId === network)
+          .map((s) => (
+            <SafeRow key={`${s.chainId}:${s.address}`} safe={s} chainName={chainName(s.chainId)} />
+          ))}
       </ul>
       {invalid > 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-400">
