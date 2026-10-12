@@ -1,6 +1,6 @@
 {
   "name": "safedesk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "description": "SafeDesk: multichain Safe owner rotations, Ledger signature collection, proposal tracking and guarded Tenderly simulations.",

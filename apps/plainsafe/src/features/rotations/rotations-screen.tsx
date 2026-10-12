@@ -14,7 +14,7 @@ export function RotationsScreen() {
       node.remove()
     })
     const title = template.querySelector('h1')
-    if (title) title.textContent = 'Rotations & Simulations'
+    if (title) title.textContent = 'Safe Ownership Management'
     const style = document.createElement('style')
     style.textContent =
       css.replaceAll(':root', ':host') +

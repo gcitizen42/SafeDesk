@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import {PublicChainCatalog} from './chain-catalog.mjs';
+import {SafeQueueReader} from './safe-queue.mjs';
 
 export const defaultDist = path.resolve(import.meta.dirname, '../../apps/plainsafe/dist');
 export const upstreamCommit = '9a23f9ab38501cf09bb5464b2b5684314e9fb7d5';
@@ -12,7 +13,7 @@ export function validPort(value) {
 }
 
 // One local origin serves the app and a deliberately namespaced, token-protected batch API.
-export function createManagerServer({dist = defaultDist, port = 8772, walletActions = false, catalog = new PublicChainCatalog(), batchHandler, integrity} = {}) {
+export function createManagerServer({dist = defaultDist, port = 8772, walletActions = false, catalog = new PublicChainCatalog(), batchHandler, integrity, queueReader = new SafeQueueReader()} = {}) {
   validPort(port);
   const index = path.join(dist, 'index.html');
   if (!fs.existsSync(index)) throw Error('Build Safe Management first: npm run setup:manager && npm run build:manager');
@@ -26,6 +27,11 @@ export function createManagerServer({dist = defaultDist, port = 8772, walletActi
     for(const [name,value]of Object.entries(security))res.setHeader(name,value);
     if(pathname.startsWith('/api/rotations/')&&batchHandler)return batchHandler(req,res);
     if (!['GET','HEAD'].includes(req.method)) return reply(res,405,'Read-only file server');
+    if(pathname==='/api/safe-queue'){
+      if(req.method==='HEAD'){res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});return res.end();}
+      try{const query=new URL(req.url,`http://127.0.0.1:${port}`).searchParams;const result=await queueReader.get({chainId:query.get('chainId'),safe:query.get('safe'),nonce:query.get('nonce')});res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});return res.end(JSON.stringify(result));}
+      catch{return reply(res,400,'Invalid Safe queue request');}
+    }
     if(pathname==='/api/chains'){
       try{const value=req.method==='HEAD'?null:await catalog.get();res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});return res.end(value?JSON.stringify(value):'');}catch{return reply(res,503,'Public chain catalogue unavailable');}
     }

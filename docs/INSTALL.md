@@ -1,10 +1,10 @@
 # Install SafeDesk Locally
 
-SafeDesk is a local-only app for Safe Management and Rotations & Simulations.
+SafeDesk is a local-only app with My Safe's and Safe Ownership Management workspaces.
 Both views use one local server, one browser origin, and port **8772** by default:
 
-- Safe Management: <http://127.0.0.1:8772/>
-- Rotations & Simulations: <http://127.0.0.1:8772/#/rotations>
+- My Safe's: <http://127.0.0.1:8772/>
+- Safe Ownership Management: <http://127.0.0.1:8772/#/rotations>
 
 The server binds to this computer's loopback address, not the network. This is
 not a hosted service: keep the terminal running while you use it, and do not
@@ -136,7 +136,7 @@ There is no separate manager port to configure for the unified app.
 
 ## Wallet Actions Are Opt-In
 
-Safe Management starts read-only. To explicitly enable its wallet actions for
+My Safe's starts read-only. To explicitly enable its wallet actions for
 one launch:
 
 ```text

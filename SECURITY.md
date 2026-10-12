@@ -25,6 +25,12 @@ before using production assets.
   verified MultiSendCallOnly. Never silently convert a delegatecall to CALL.
 - Safe authenticity compares runtime keccak256 hashes to pinned deployment
   data. It does not establish owner safety or verify RPC truthfulness.
+- Published queue reads use pinned Safe service endpoints through the local
+  read-only server. Redirects and foreign pagination are rejected; results
+  are bounded and full transaction hashes rechecked. Service confirmation
+  counts alone are not approvals: supported EOA signatures are recovered
+  independently, and execution still requires current chain checks. Published
+  packages enter IndexedDB only after an explicit Review locally action.
 - Build/source SHA-256 fingerprints are local integrity checks. Startup and
   asset serving reject mismatches. Replacing both code and its manifest can
   defeat this check; verify the source/commit independently.

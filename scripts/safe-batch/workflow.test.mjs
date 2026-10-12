@@ -129,6 +129,6 @@ test('new installation boots with setup required; settings and status endpoints 
  const headers={'content-type':'application/json','x-batch-token':batch.token};assert.equal((await fetch(base+'/api/chains',{headers})).status,200);
  assert.equal((await fetch(base+'/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status,403);
  assert.equal((await fetch(base+'/api/settings',{method:'POST',headers,body:JSON.stringify({tenderly:{enabled:false}})})).status,200);
- assert.equal((await fetch(base+'/secrets/safedesk.env')).status,404);assert.ok((await fetch(base).then(r=>r.text())).includes('<title>SafeDesk | Rotations &amp; Simulations</title>'));
+ assert.equal((await fetch(base+'/secrets/safedesk.env')).status,404);assert.ok((await fetch(base).then(r=>r.text())).includes('<title>SafeDesk | Safe Ownership Management</title>'));
  }finally{await new Promise(r=>server.close(r));}
 });

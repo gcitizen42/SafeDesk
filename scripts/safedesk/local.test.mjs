@@ -77,3 +77,12 @@ test('server refuses assets changed after verified startup',async t=>{
   const base=`http://127.0.0.1:${port}`;assert.equal((await fetch(base+'/assets/boot-123.js')).status,200);
   fs.writeFileSync(path.join(dist,'assets/boot-123.js'),'changed');assert.equal((await fetch(base+'/assets/boot-123.js')).status,503);
 });
+test('published queue proxy is same-origin read-only and validates parameters without exposing config',async t=>{
+  const{dist}=fixture(t),port=await freePort(),calls=[];
+  const server=createManagerServer({dist,port,queueReader:{get:async input=>{calls.push(input);return{status:'ok',transactions:[]};}}});await new Promise(r=>server.listen(port,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const base=`http://127.0.0.1:${port}`,url=base+'/api/safe-queue?chainId=1&safe=0x1111111111111111111111111111111111111111&nonce=7';
+  assert.equal((await fetch(url,{headers:{origin:'https://evil.example'}})).status,403);assert.equal(calls.length,0);
+  assert.equal((await fetch(url,{method:'POST'})).status,405);assert.equal(calls.length,0);
+  assert.equal((await fetch(url,{method:'HEAD'})).status,200);assert.equal(calls.length,0);
+  const result=await fetch(url);assert.equal(result.status,200);assert.equal(result.headers.get('access-control-allow-origin'),null);assert.deepEqual(calls,[{chainId:'1',safe:'0x1111111111111111111111111111111111111111',nonce:'7'}]);
+});

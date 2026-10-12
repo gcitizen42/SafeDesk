@@ -35,8 +35,8 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     const port = validPort(option('--port',8772));
     const desk = await startDesk({root:option('--root',defaultBatch()),port,walletActions:args.includes('--enable-wallet-actions')});
     console.log(`SafeDesk: http://127.0.0.1:${port}/`);
-    console.log(`Rotations & Simulations: http://127.0.0.1:${port}/#/rotations`);
-    console.log(args.includes('--enable-wallet-actions') ? 'Safe Management wallet actions explicitly enabled; review every wallet request.' : 'Safe Management is read-only. Rotation signing/proposals have their existing separate controls.');
+    console.log(`Safe Ownership Management: http://127.0.0.1:${port}/#/rotations`);
+    console.log(args.includes('--enable-wallet-actions') ? "My Safe's wallet actions explicitly enabled; review every wallet request." : "My Safe's is read-only. Ownership signing/proposals have their existing separate controls.");
     const stop = async() => {await desk.close();process.exit();};
     process.once('SIGINT',stop);process.once('SIGTERM',stop);
   } catch(error) {console.error(error.code === 'EADDRINUSE' ? 'The local port is already occupied. Stop the old SafeDesk server or use --port.' : error.message);process.exitCode = 1;}

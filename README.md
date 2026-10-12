@@ -2,8 +2,8 @@
 
 SafeDesk is one local application with two nested workspaces at the same address:
 
-- **Safe Management**, powered by a pinned, modified MIT-licensed copy of [PlainSafe](https://github.com/gskril/plainsafe): configure RPCs, inspect Safes, build/edit/import transactions, choose EIP-712 or Ledger hash signing and share verified packages. Starts read-only.
-- **Rotations & Simulations**, our existing multichain workflow: choose owners/thresholds, generate calls using [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager), simulate with Tenderly, collect Ledger signatures and publish reviewed proposals.
+- **My Safe's**, powered by a pinned, modified MIT-licensed copy of [PlainSafe](https://github.com/gskril/plainsafe): configure RPCs, inspect Safes and pending published transactions, build/edit/import transactions, choose EIP-712 or Ledger hash signing and share verified packages. Starts read-only.
+- **Safe Ownership Management**, our multichain workflow: choose owners/thresholds, generate calls using [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager), simulate with Tenderly, collect Ledger signatures and publish reviewed proposals.
 
 Both workspaces are routes inside the PlainSafe-powered interface, served by one localhost process. Rotation endpoints are namespaced under `/api/rotations/` and retain session-token, origin and confirmation checks. They share the app's trust boundary, not an automatic credential/signature transfer. **SafeDesk is unaudited; local hosting is not a security certification.** Read [Security](SECURITY.md) and the [integration guide](apps/plainsafe/SAFEDESK.md) before enabling management wallet actions. Credit and the original license are preserved in [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
@@ -20,7 +20,7 @@ npm start
 
 Requires Node 22.12+ and npm. Setup obtains pinned Bun through npm without a global installation. Builds use the committed lockfile; serving downloads no code.
 
-Open [SafeDesk](http://127.0.0.1:8772/) in a wallet-enabled browser. **Rotations & Simulations** stays inside the same app at [/#/rotations](http://127.0.0.1:8772/#/rotations), with no iframe, second port or page handoff. Management starts read-only. Existing rotation files and collected signatures remain unchanged. See [Windows, macOS and Linux installation](docs/INSTALL.md); Windows users can also run `start-safedesk.cmd` after setup.
+Open [SafeDesk](http://127.0.0.1:8772/) in a wallet-enabled browser. **Safe Ownership Management** stays inside the same app at [/#/rotations](http://127.0.0.1:8772/#/rotations), with no iframe, second port or page handoff. Management starts read-only. Existing rotation files and collected signatures remain unchanged. See [Windows, macOS and Linux installation](docs/INSTALL.md); Windows users can also run `start-safedesk.cmd` after setup.
 
 On a fresh rotation batch, its wizard asks you to:
 
@@ -32,7 +32,17 @@ On a fresh rotation batch, its wizard asks you to:
 
 Rotation RPCs and Tenderly keys stay in ignored local environment files. Management settings, including RPC URLs, stay unencrypted in browser IndexedDB and may be included in private backups. Do not share keyed RPC backups or signature collections publicly. The historical folder name stays `tDAO-signerrotation` for compatibility.
 
-The legacy rotation-only server remains available with `npm run start:rotations`; it is not needed for the combined app. CLI commands still work. Management's local queue does not mirror Safe service proposals, and earlier rotation collections use a different file format. EIP-712 and Safe personal-sign packages are supported; signature transfer between workspaces remains explicit.
+The legacy rotation-only server remains available with `npm run start:rotations`; it is not needed for the combined app. CLI commands still work. Earlier rotation collections use a different file format. EIP-712 and Safe personal-sign packages are supported; signature transfer between workspaces remains explicit.
+
+## Published Queue
+
+Open a Safe and select **Queue**. SafeDesk reads the network's trusted Safe Transaction Service and combines published proposals with this browser's local packages, deduplicating by the full SafeTx hash. Only current/future nonces from the freshly checked onchain Safe state are pending; old unexecuted service records are excluded. **Refresh** updates Safe state and queue data; remote responses are briefly cached to limit requests.
+
+Rows show their source, nonce, hash and cryptographically verified current-owner EOA signatures. Reported service confirmation totals are metadata, not proof of execution readiness. Unsupported/invalid confirmations are not counted. Same-nonce alternatives across local/published sources are marked as conflicts. No pending rows is reported only after a complete successful check; unavailable/partial/unsupported service states remain explicit.
+
+**Review locally** saves a verified published package to this browser only after your click. It does not sign, approve, propose or execute. No automatic remote-to-IndexedDB writes occur. Safe ownership and execution checks still run in the review screen; wallet actions remain opt-in. Use the Safe queue link for independent comparison.
+
+The queue reader pins Safe's current `api.safe.global/tx-service/<network>` endpoints (BOB uses its existing service), rejects redirects and foreign pagination, bounds response sizes/pages, and verifies every full SafeTx hash. Unknown chains show a service-unsupported notice. Public service rate limits/access restrictions can make a queue unavailable; this is not treated as an empty queue. [Safe API authentication/access documentation](https://docs.safe.global/core-api/how-to-use-api-keys).
 
 ## Verification
 

@@ -65,11 +65,11 @@ export function Header() {
         <nav className="desk-tabs" aria-label="SafeDesk workspace">
           <Link href="/" aria-current={rotations ? undefined : 'page'}>
             <ShieldCheck aria-hidden="true" />
-            Safe Management
+            My Safe's
           </Link>
           <Link href="/rotations" aria-current={rotations ? 'page' : undefined}>
             <Users aria-hidden="true" />
-            Rotations &amp; Simulations
+            Safe Ownership Management
           </Link>
         </nav>
         <span className="pb-2 text-xs text-amber-700 dark:text-amber-400">

@@ -63,9 +63,12 @@ malicious code, browser extensions or a compromised device.
 - This extends upstream PlainSafe's package schema: EIP-712 packages remain
   compatible, but packages carrying `kind: eth_sign` need SafeDesk, not an
   unmodified PlainSafe import screen.
-- The local package queue does **not** mirror pending Safe Transaction
-  Service proposals. Import a complete PlainSafe package from a co-signer
-  to see that proposal. Onchain execution history can be read separately.
+- The queue combines pending Safe Transaction Service proposals with local
+  packages, deduplicating by full SafeTx hash. Unsupported/unavailable or
+  incomplete service responses stay explicit. Full hashes and supported EOA
+  confirmations are independently verified; no automatic browser writes occur.
+  Review locally is an explicit import, not an approval or execution. Onchain
+  execution history is still read separately.
 - RPC simulations are not Tenderly VNet evidence. Tenderly remains a
   separate confirmed workflow in Rotations & Simulations.
 - Broadcast routing is controlled by the connected wallet. This is **not
