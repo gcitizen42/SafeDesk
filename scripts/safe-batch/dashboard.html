@@ -31,5 +31,5 @@
 <dialog id="pasteDialog"><form id="pasteForm"><h2>Collect signature</h2><label>Current owner address<input name="sender" required placeholder="0x..."></label><label>65-byte signature<textarea name="signature" required spellcheck="false"></textarea></label><div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary">Verify and collect</button></div></form></dialog>
 <dialog id="reviewDialog"><h2>Propose selected transactions</h2><div id="reviewList"></div><p class="note">These signatures will be published to each Safe's transaction service. Owners can then review and approve the proposals in Safe.</p><div class="dialog-actions"><button data-close>Back</button><button id="propose" class="primary"><i data-lucide="send"></i>Propose selected</button></div></dialog>
 <input id="collectionFile" type="file" accept="application/json,.json" hidden>
-<script src="/lucide.js"></script><script type="module" src="/dashboard.mjs"></script>
+<script type="importmap">{"imports":{"ethers":"/ethers.js"}}</script><script src="/lucide.js"></script><script type="module" src="/dashboard-standalone.mjs"></script>
 </body></html>

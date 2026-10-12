@@ -30,6 +30,8 @@ export type Authenticity =
       readonly l2: boolean
       readonly singleton: Address
       readonly singletonName: string
+      /** keccak256 of the checked singleton runtime code, matching the pinned table. */
+      readonly codeHash: Hex
       readonly proxy: ProxyInfo
       /** Set when VERSION() disagrees with the version from the code hash. */
       readonly versionMismatch?: string
@@ -83,6 +85,7 @@ export function checkAuthenticity(
     l2: singleton.l2,
     singleton: input.singleton,
     singletonName: singleton.contractName,
+    codeHash: singletonHash,
     proxy,
     ...(mismatch !== undefined ? { versionMismatch: mismatch } : {}),
   }

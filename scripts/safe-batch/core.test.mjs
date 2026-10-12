@@ -48,7 +48,7 @@ test('full simulation checks payload plus ExecutionSuccess hash, not outer trans
 });
 test('collect persists privately, deduplicates signer and permits one-signature proposals',async()=>{
  const f=fixture();await f.store.collect('fixture',wallet.address,typed);await f.store.collect('fixture',wallet.address,raw);assert.equal(f.store.export().operations[0].signatures.length,1);
- assert.equal(fs.statSync(path.join(f.root,'secrets/batch-state.json')).mode&0o777,0o600);
+ if(process.platform!=='win32')assert.equal(fs.statSync(path.join(f.root,'secrets/batch-state.json')).mode&0o777,0o600);
  assert.equal(f.store.list()[0].signatures.length,1);assert.equal(f.store.list()[0].signatures[0].signature,undefined);
  assert.equal((await f.store.propose(['fixture']))[0].status,'proposed');assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.url.includes('rpc.gobob')).length,1);
 });

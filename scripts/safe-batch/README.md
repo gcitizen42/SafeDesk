@@ -1,8 +1,8 @@
 # SafeDesk Operator Guide
 
 This guide describes **Rotations & Simulations**, the second SafeDesk tab.
-`npm start` starts it alongside isolated **Safe Management** after
-`npm run setup:manager` and `npm run build:manager`. The original server
+`npm start` serves it inside **Safe Management** at the same localhost address
+after `npm run install:desk`. The original standalone server
 remains available via `npm run start:rotations` or `npm run batch -- serve`.
 See [the management guide](../../apps/plainsafe/SAFEDESK.md) for its read-only
 mode and signature/queue limitations. Existing collections are not migrated.
@@ -13,22 +13,21 @@ Prepare owner rotations, monitor Safe transaction readiness, collect Ledger sign
 
 ## Start
 
-Requires Node.js 22 or newer and this project's installed dependencies.
+Requires Node.js 22.12 or newer and this project's installed dependencies.
 
 ```bash
-cd /Users/Citizen42/Desktop/TdaoUtils/AI-ops/tDAO-signerrotation
-npm ci --ignore-scripts
-npm run start:rotations
+npm run install:desk
+npm start
 ```
 
-Open http://127.0.0.1:8770/ in Chrome or Brave with MetaMask and your Ledger account. The Codex in-app browser can show the desk but may not expose your wallet extension. The server listens only on localhost. If 8770 is already running, use that instance, or choose `serve --port 8771`.
+Open http://127.0.0.1:8772/#/rotations in Chrome or Brave with MetaMask and your Ledger account. The Codex in-app browser can show the desk but may not expose your wallet extension. The server listens only on localhost. Use `npm start -- --port 8782` for a different port; both workspaces use it. The optional legacy standalone server (`npm run start:rotations`) still uses port 8770.
 
-The default batch is `operations/2026-10-09-outstanding-rotations`. Every command accepts `--root /absolute/path/to/another/prepared-batch`.
+An existing local October batch is reused if present; a fresh checkout starts with an empty batch. Every command accepts `--root /absolute/path/to/another/prepared-batch`.
 
 Operation folders and signatures are intentionally not committed. On a fresh checkout, starting the desk initializes an empty batch and opens the setup wizard automatically:
 
 ```bash
-npm ci --ignore-scripts
+npm run install:desk
 npm start
 ```
 

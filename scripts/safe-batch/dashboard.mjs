@@ -1,20 +1,25 @@
-import {ethers} from '/ethers.js';
+import {ethers} from 'ethers';
+export function mountRotations(root,{apiBase='/api/rotations/',renderIcons=()=>window.lucide?.createIcons(),onBusy=()=>{}}={}){
+let active=true;const abort=new AbortController(),timers=new Set();
 let token,operations=[],chains={},tenderly={},settings={},simulationToken=null,simulationId=null,selectedId=null,account=null,reviewToken=null,busy=false;
 const selected=new Set(),checks=new Map();
 let setupMode=null,setupStep=1,snapshot=null,catalog=null,loadedSafeInput=null;
 let networkFilter='all',signingMethod='eip712';
-const $=selector=>document.querySelector(selector);
-const icons=()=>window.lucide?.createIcons();
+const $=selector=>root.querySelector(selector);
+const icons=()=>{if(active)renderIcons(root);};
 const text=(tag,value,cls)=>{const e=document.createElement(tag);e.textContent=value;if(cls)e.className=cls;return e;};
 const short=a=>a.slice(0,8)+'...'+a.slice(-6);
-function status(message,error=false){$('#status').textContent=message;$('#status').className=error?'error':'';}
-async function api(route,data){const r=await fetch('/api/'+route,data===undefined?{headers:token?{'x-batch-token':token}:{}}:{method:'POST',headers:{'content-type':'application/json','x-batch-token':token},body:JSON.stringify(data)});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j;}
-async function perform(fn){if(busy)return;busy=true;render();try{await fn();}catch(e){status(e.message,true);}finally{busy=false;render();}}
+function status(message,error=false){if(!active)return;$('#status').textContent=message;$('#status').className=error?'error':'';}
+function assertActive(){if(!active)throw Error('Rotation workspace closed; no further actions were requested');}
+function walletRequest(input){assertActive();if(!window.ethereum)throw Error('Open SafeDesk in a wallet-enabled browser');return window.ethereum.request(input);}
+async function api(route,data){assertActive();const r=await fetch(apiBase+route,{signal:abort.signal,...(data===undefined?{headers:token?{'x-batch-token':token}:{}}:{method:'POST',headers:{'content-type':'application/json','x-batch-token':token},body:JSON.stringify(data)})});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');assertActive();return j;}
+async function perform(fn){if(busy||!active)return;busy=true;onBusy(true);render();try{await fn();}catch(e){status(e.message,true);}finally{busy=false;onBusy(false);render();}}
 async function load(){const b=await api('batch');token=b.token;operations=b.operations;chains=b.chains;tenderly=b.tenderly;settings=b.settings;checks.clear();if(!selectedId||!operations.some(x=>x.id===selectedId))selectedId=operations[0]?.id;render();if(b.setupRequired&&!setupMode)await beginSetup('first');}
 function button(label,icon,fn,disabled=false){const b=text('button',label);if(icon){const i=document.createElement('i');i.dataset.lucide=icon;b.prepend(i);}b.disabled=disabled||busy;b.onclick=()=>perform(fn);return b;}
 const op=()=>operations.find(x=>x.id===selectedId);
 const visibleOperations=()=>operations.filter(x=>networkFilter==='all'||x.chainId===Number(networkFilter));
 function render(){
+ if(!active)return;
  $('#batchCount').textContent=operations.length?operations.length+' operations':'Setup';$('#selectedCount').textContent=selected.size?'('+selected.size+')':'';$('#review').disabled=busy||!selected.size;
  $('#batchToolbar').hidden=!!setupMode;$('#batchWorkspace').hidden=!!setupMode;$('#setup').hidden=!setupMode;
  $('#settings').disabled=busy||!!setupMode;$('#add').disabled=busy;$('#preparedImport').disabled=busy;
@@ -45,26 +50,31 @@ function render(){
  icons();
 }
 async function sign(item,method){
+ assertActive();
  if(!['eip712','eth_sign'].includes(method))throw Error('Choose a supported signing method');
  const checked=await api('check',{id:item.id});if(!checked.result.owners.some(a=>a.toLowerCase()===account.toLowerCase()))throw Error('Connected account is not a current owner');
- const target='0x'+item.chainId.toString(16);if((await window.ethereum.request({method:'eth_chainId'})).toLowerCase()!==target){
-  try{await window.ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:target}]});}catch(e){
+ const target='0x'+item.chainId.toString(16);if((await walletRequest({method:'eth_chainId'})).toLowerCase()!==target){
+  try{await walletRequest({method:'wallet_switchEthereumChain',params:[{chainId:target}]});}catch(e){
    if(e.code!==4902)throw e;const chain=chains[item.chainId];
-   await window.ethereum.request({method:'wallet_addEthereumChain',params:[{chainId:target,chainName:chain.name,nativeCurrency:{name:item.chainId===137?'POL':'Ether',symbol:item.chainId===137?'POL':'ETH',decimals:18},rpcUrls:[chain.rpc],blockExplorerUrls:[chain.explorer]}]});
+   await walletRequest({method:'wallet_addEthereumChain',params:[{chainId:target,chainName:chain.name,nativeCurrency:{name:item.chainId===137?'POL':'Ether',symbol:item.chainId===137?'POL':'ETH',decimals:18},rpcUrls:[chain.rpc],blockExplorerUrls:[chain.explorer]}]});
   }
  }
- if((await window.ethereum.request({method:'eth_chainId'})).toLowerCase()!==target)throw Error('Select the correct wallet network before signing');
- const accounts=await window.ethereum.request({method:'eth_accounts'});if(accounts[0]?.toLowerCase()!==account.toLowerCase())throw Error('Wallet account changed; reconnect');
+ if((await walletRequest({method:'eth_chainId'})).toLowerCase()!==target)throw Error('Select the correct wallet network before signing');
+ const accounts=await walletRequest({method:'eth_accounts'});if(accounts[0]?.toLowerCase()!==account.toLowerCase())throw Error('Wallet account changed; reconnect');
  const computed=ethers.TypedDataEncoder.hash(item.signing.domain,item.signing.types,item.signing.message);if(computed!==item.hash)throw Error('Hash mismatch');
+ assertActive();
  status('Confirm '+item.id+' on your Ledger...');
  const payload=ethers.TypedDataEncoder.getPayload(item.signing.domain,item.signing.types,item.signing.message);
- const raw=await window.ethereum.request(method==='eth_sign'?{method:'personal_sign',params:[item.hash,account]}:{method:'eth_signTypedData_v4',params:[account,JSON.stringify(payload)]});
+ const raw=await walletRequest(method==='eth_sign'?{method:'personal_sign',params:[item.hash,account]}:{method:'eth_signTypedData_v4',params:[account,JSON.stringify(payload)]});
  await api('collect',{id:item.id,sender:account,signature:raw,method});selected.add(item.id);await load();status('Signature verified and collected for '+item.id+'.');
 }
 $('#networkFilter').onchange=e=>{networkFilter=e.target.value;selectedId=visibleOperations()[0]?.id;checks.clear();render();};
-$('#connect').onclick=()=>perform(async()=>{if(!window.ethereum)throw Error('Open this URL in Chrome or Brave with MetaMask and your Ledger account.');[account]=await window.ethereum.request({method:'eth_requestAccounts'});$('#connect').querySelector('span').textContent=short(account);checks.clear();render();if(op())await refreshTransaction(op());else status('Wallet connected.');});
-window.ethereum?.on?.('accountsChanged',accounts=>{account=accounts[0]||null;checks.clear();$('#connect').querySelector('span').textContent=account?short(account):'Connect Ledger wallet';render();});
-window.ethereum?.on?.('chainChanged',()=>{checks.clear();render();});
+$('#connect').onclick=()=>perform(async()=>{if(!window.ethereum)throw Error('Open this URL in Chrome or Brave with MetaMask and your Ledger account.');[account]=await walletRequest({method:'eth_requestAccounts'});assertActive();if(!account)throw Error('No wallet account was returned');$('#connect').querySelector('span').textContent=short(account);checks.clear();render();if(op())await refreshTransaction(op());else status('Wallet connected.');});
+const accountsChanged=accounts=>{if(!active)return;account=accounts[0]||null;checks.clear();$('#connect').querySelector('span').textContent=account?short(account):'Connect Ledger wallet';render();};
+const chainChanged=()=>{if(!active)return;checks.clear();render();};
+window.ethereum?.on?.('accountsChanged',accountsChanged);
+window.ethereum?.on?.('chainChanged',chainChanged);
+window.ethereum?.request({method:'eth_accounts'}).then(accountsChanged).catch(()=>{});
 $('#refresh').onclick=()=>perform(async()=>{await load();status('Batch reloaded.');});
 $('#add').onclick=()=>perform(()=>beginSetup('add'));
 $('#settings').onclick=()=>perform(()=>beginSetup('settings'));
@@ -76,7 +86,7 @@ $('#export').onclick=()=>perform(async()=>{const collection=await api('export'),
 $('#import').onclick=()=>$('#collectionFile').click();$('#collectionFile').onchange=e=>perform(async()=>{await api('import',{collection:JSON.parse(await e.target.files[0].text())});await load();status('Collection imported and signatures checked.');});
 $('#review').onclick=()=>perform(async()=>{status('Checking selected proposals...');const data=await api('review',{ids:[...selected]});reviewToken=data.result.reviewToken;const list=$('#reviewList');list.replaceChildren();for(const item of data.result.items){const row=document.createElement('div');row.className='review-item';row.append(text('strong',item.id+' · '+item.chain),text('code',item.safe),text('code',item.hash),text('p','Nonce '+item.nonce+' · '+item.signatures+' collected / '+item.threshold+' required for execution','note'));list.append(row);}$('#reviewDialog').showModal();status('Selected proposals checked.');});
 $('#propose').onclick=()=>perform(async()=>{status('Publishing selected proposals...');const result=await api('propose',{reviewToken,confirm:'PROPOSE'});$('#reviewDialog').close();await load();status(result.result.map(x=>x.id+': '+x.status+(x.message?' ('+x.message+')':'')).join(' · '));});
-document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
+root.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 async function prepareTenderly(publicExplorer){
  simulationToken=null;$('#runTenderly').disabled=true;
  status('Checking Tenderly support and capacity...');const data=await api('tenderly-plan',{id:simulationId,publicExplorer});simulationToken=data.result.simulationToken;$('#runTenderly').disabled=false;
@@ -86,13 +96,14 @@ $('#publicExplorer').onchange=e=>perform(()=>prepareTenderly(e.target.checked));
 $('#runTenderly').onclick=()=>perform(async()=>{
  const runButton=$('#runTenderly');runButton.disabled=true;status('Tenderly simulation running...');let polling=false,active=true;
  const timer=setInterval(async()=>{if(polling)return;polling=true;try{const data=await api('tenderly-progress?id='+encodeURIComponent(simulationId));if(active&&data.job?.status==='RUNNING')status(data.job.stage);}catch{}finally{polling=false;}},1500);
+ timers.add(timer);
  try{await api('tenderly-run',{simulationToken,confirm:'SIMULATE'});status('Tenderly passed: exact Safe execution and final state matched.');}
- finally{active=false;clearInterval(timer);simulationToken=null;runButton.disabled=true;$('#tenderlyDialog').close();await load();}
+ finally{active=false;clearInterval(timer);timers.delete(timer);simulationToken=null;runButton.disabled=true;$('#tenderlyDialog').close();await load();}
 });
 async function refreshTransaction(item){
  checks.delete(item.id);render();
  status('Fetching the current Safe transaction and approvals...');
- const walletChainId=account&&window.ethereum?Number(await window.ethereum.request({method:'eth_chainId'})):null;
+ const walletChainId=account&&window.ethereum?Number(await walletRequest({method:'eth_chainId'})):null;
  const result=await api('transaction-status',{id:item.id,account,walletChainId});checks.set(item.id,result.result);render();
  status(result.result.serviceError||'Transaction status checked at block '+result.result.block+'.',!!result.result.serviceError);
 }
@@ -140,7 +151,7 @@ function renderSetup(){
  const steps=setupMode==='settings'?[[1,'Network'],[4,'Tenderly']]:[[1,'Network'],[2,'Safe'],[3,'Owners'],[4,'Tenderly'],[5,'Review']];
  $('#setupTitle').textContent=setupMode==='settings'?'Connection settings':setupMode==='first'?'Set up your first Safe':'Add a Safe rotation';
  $('#setupSteps').replaceChildren(...steps.map(([step,label],index)=>{const li=text('li',(index+1)+'. '+label,step===setupStep?'current':step<setupStep?'complete':'');if(step===setupStep)li.setAttribute('aria-current','step');return li;}));
- document.querySelectorAll('[data-step]').forEach(section=>section.hidden=Number(section.dataset.step)!==setupStep);
+ root.querySelectorAll('[data-step]').forEach(section=>section.hidden=Number(section.dataset.step)!==setupStep);
  $('#cancelSetup').hidden=setupMode==='first';$('#cancelSetup').disabled=busy;$('#setupBack').hidden=setupStep===1;$('#setupBack').disabled=busy;
  $('#setupNext').disabled=busy;$('#loadSafe').disabled=busy;$('#setupNext').replaceChildren(text('span',setupStep===5?'Prepare rotation':setupMode==='settings'&&setupStep===4?'Save settings':'Continue'));
  const i=document.createElement('i');i.dataset.lucide=setupStep===5?'file-check':setupMode==='settings'&&setupStep===4?'save':'arrow-right';$('#setupNext').append(i);
@@ -186,3 +197,5 @@ $('#setupChain').onchange=rpcChoices;$('#rpcChoice').onchange=()=>{$('#customRpc
 $('#setupTenderly').onchange=renderSetup;$('#setupOwners').oninput=updateOwnerCount;
 $('#loadSafe').onclick=()=>perform(async()=>{try{await loadSafe();$('#setupError').textContent='';}catch(e){$('#setupError').textContent=e.message;throw e;}});
 load().then(()=>{if(!setupMode)status('Prepared operations loaded.');}).catch(e=>status(e.message,true));
+return()=>{active=false;abort.abort();for(const timer of timers)clearInterval(timer);window.ethereum?.removeListener?.('accountsChanged',accountsChanged);window.ethereum?.removeListener?.('chainChanged',chainChanged);root.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());};
+}

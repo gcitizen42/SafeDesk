@@ -7,17 +7,23 @@ import {TenderlyRunner} from './tenderly.mjs';
 import {ChainCatalog,SafeWorkflow} from './workflow.mjs';
 import {publicSettings} from './settings.mjs';
 const here=import.meta.dirname,project=path.resolve(here,'../..');
-export function createServer(root,{store=new BatchStore(root),port=8770,managerPort=8772,runner=new TenderlyRunner(store),workflow=new SafeWorkflow(store),catalog=new ChainCatalog()}={}){
+export const createServer=(root,options={})=>http.createServer(createBatchHandler(root,options));
+export function createBatchHandler(root,{store=new BatchStore(root),port=8770,managerPort=8772,runner=new TenderlyRunner(store),workflow=new SafeWorkflow(store),catalog=new ChainCatalog(),prefix=''}={}){
  if(!Number.isInteger(Number(managerPort))||Number(managerPort)<1||Number(managerPort)>65535)throw Error('Invalid manager port');
  store.init();
  const token=randomBytes(32).toString('hex'),reviews=new Map(),simulationPlans=new Map();let busy=false;
  const origins=new Set([`http://127.0.0.1:${port}`,`http://localhost:${port}`]);
- const publicFiles={'/':'dashboard.html','/dashboard.html':'dashboard.html','/dashboard.mjs':'dashboard.mjs','/dashboard.css':'dashboard.css'};
+ if(!['','/api/rotations'].includes(prefix))throw Error('Invalid batch route prefix');
+ const publicFiles={'/':'dashboard.html','/dashboard.html':'dashboard.html','/dashboard.mjs':'dashboard.mjs','/dashboard-standalone.mjs':'dashboard-standalone.mjs','/dashboard.css':'dashboard.css'};
  const send=(res,status,obj)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(obj));};
- return http.createServer(async(req,res)=>{
+ return async(req,res)=>{
   if(!origins.has(`http://${req.headers.host}`))return send(res,403,{error:'Unexpected host'});
   if(req.headers.origin&&!origins.has(req.headers.origin))return send(res,403,{error:'Unexpected origin'});
   const url=new URL(req.url,'http://localhost');
+  if(prefix){
+   if(!url.pathname.startsWith(prefix+'/'))return send(res,404,{error:'Not found'});
+   url.pathname='/api/'+url.pathname.slice(prefix.length+1);
+  }
   try{
    if(req.method==='GET'&&url.pathname==='/api/batch')return send(res,200,{token,operations:store.list(),chains:CHAINS,tenderly:runner.status(),settings:publicSettings(root),setupRequired:store.ids().length===0});
    if(req.method==='GET'&&url.pathname==='/api/chains'){
@@ -72,5 +78,5 @@ export function createServer(root,{store=new BatchStore(root),port=8770,managerP
    const contents=fs.readFileSync(file);const output=publicFiles[url.pathname]==='dashboard.html'?contents.toString().replace('id="managementTab" href="http://127.0.0.1:8772/"',`id="managementTab" href="http://127.0.0.1:${managerPort}/"`):contents;
    res.writeHead(200,{'content-type':type,'cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY'});res.end(output);
   }catch(e){send(res,400,{error:e.message});}
- });
+ };
 }

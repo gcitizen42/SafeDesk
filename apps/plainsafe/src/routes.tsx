@@ -1,5 +1,5 @@
 // The screen and route map (SPEC §9.4).
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Route, Switch, useLocation } from 'wouter'
 import { NotFound } from '@/components/layout/not-found'
 import { Builder, NewTransaction, SwapScreen } from '@/features/builder/builder'
@@ -18,13 +18,20 @@ import { VerifyScreen } from '@/features/verify/verify-screen'
 import { useLoadedSettings } from '@/queries/settings'
 
 const SAFE = '/safe/:chainId/:address'
+const RotationsScreen = lazy(() =>
+  import('@/features/rotations/rotations-screen').then((module) => ({
+    default: module.RotationsScreen,
+  })),
+)
 
 /** Routes that work before setup is done: setup itself, opening a shared link, and Verify. */
 const openBeforeSetup = (location: string) =>
   location === '/setup' ||
   location === '/import' ||
   location.startsWith('/import/') ||
-  location === '/verify'
+  location === '/verify' ||
+  location === '/rotations' ||
+  location === '/settings/about'
 
 export function Routes() {
   const settings = useLoadedSettings()
@@ -42,6 +49,17 @@ export function Routes() {
 
   return (
     <Switch>
+      <Route path="/rotations">
+        <Suspense
+          fallback={
+            <div className="px-4 py-8" role="status">
+              Loading rotations...
+            </div>
+          }
+        >
+          <RotationsScreen />
+        </Suspense>
+      </Route>
       <Route path="/setup">
         <SetupScreen settings={settings} />
       </Route>

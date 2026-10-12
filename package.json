@@ -1,6 +1,6 @@
 {
   "name": "safedesk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "SafeDesk: multichain Safe owner rotations, Ledger signature collection, proposal tracking and guarded Tenderly simulations.",
@@ -11,7 +11,9 @@
     "start": "node scripts/safedesk/start.mjs",
     "start:rotations": "node scripts/safe-batch/cli.mjs serve",
     "setup:manager": "npm exec --yes --package=bun@1.4.3 -- bun install --cwd apps/plainsafe --frozen-lockfile --ignore-scripts",
-    "build:manager": "npm --prefix apps/plainsafe run build",
+    "build:manager": "npm --prefix apps/plainsafe run build && node scripts/safedesk/build-integrity.mjs --record",
+    "install:desk": "node scripts/safedesk/install.mjs",
+    "verify:app": "node scripts/safedesk/build-integrity.mjs",
     "test:manager": "npm --prefix apps/plainsafe test -- --maxWorkers=4",
     "audit:manager": "npm exec --yes --package=bun@1.4.3 -- bun audit --cwd apps/plainsafe",
     "test:local": "node --test scripts/safedesk/*.test.mjs",

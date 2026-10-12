@@ -11,10 +11,9 @@ export function validPort(value) {
   return port;
 }
 
-// Only built files and public chain metadata are exposed; never a batch API or secret bridge.
-export function createManagerServer({dist = defaultDist, port = 8772, rotationPort = 8770, walletActions = false, catalog = new PublicChainCatalog()} = {}) {
-  validPort(port); validPort(rotationPort);
-  if (Number(port) === Number(rotationPort)) throw Error('Management and rotations need separate origins');
+// One local origin serves the app and a deliberately namespaced, token-protected batch API.
+export function createManagerServer({dist = defaultDist, port = 8772, walletActions = false, catalog = new PublicChainCatalog(), batchHandler, integrity} = {}) {
+  validPort(port);
   const index = path.join(dist, 'index.html');
   if (!fs.existsSync(index)) throw Error('Build Safe Management first: npm run setup:manager && npm run build:manager');
   const origins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
@@ -22,15 +21,17 @@ export function createManagerServer({dist = defaultDist, port = 8772, rotationPo
   const reply = (res, status, body) => {res.writeHead(status, {...security, 'content-type':'text/plain; charset=utf-8', 'cache-control':'no-store'});res.end(body);};
   return http.createServer(async(req,res) => {
     if (!origins.has(`http://${req.headers.host}`) || (req.headers.origin && !origins.has(req.headers.origin))) return reply(res,403,'Unexpected local origin');
-    if (!['GET','HEAD'].includes(req.method)) return reply(res,405,'Read-only file server');
     let pathname;
     try {pathname = decodeURIComponent(new URL(req.url, `http://127.0.0.1:${port}`).pathname);} catch {return reply(res,400,'Invalid path');}
+    for(const [name,value]of Object.entries(security))res.setHeader(name,value);
+    if(pathname.startsWith('/api/rotations/')&&batchHandler)return batchHandler(req,res);
+    if (!['GET','HEAD'].includes(req.method)) return reply(res,405,'Read-only file server');
     if(pathname==='/api/chains'){
       try{const value=req.method==='HEAD'?null:await catalog.get();res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});return res.end(value?JSON.stringify(value):'');}catch{return reply(res,503,'Public chain catalogue unavailable');}
     }
     if (pathname === '/.well-known/safedesk-manager') {
       res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});
-      return res.end(req.method === 'HEAD' ? '' : JSON.stringify({app:'SafeDesk Safe Management',upstreamCommit,rotationOrigin:`http://127.0.0.1:${rotationPort}`,walletActions:walletActions === true}));
+      return res.end(req.method === 'HEAD' ? '' : JSON.stringify({app:'SafeDesk',upstreamCommit,rotationsPath:'/#/rotations',walletActions:walletActions === true,build:integrity?.summary||null}));
     }
     const home = pathname === '/' || pathname === '/index.html';
     if (!home && !/^\/assets\/[a-zA-Z0-9_.-]+\.(js|css|woff2?|png|svg)$/.test(pathname)) return reply(res,404,'Not found');
@@ -39,7 +40,8 @@ export function createManagerServer({dist = defaultDist, port = 8772, rotationPo
       const real = fs.realpathSync(file), base = fs.realpathSync(dist);
       if (!real.startsWith(base + path.sep) || !fs.statSync(real).isFile()) return reply(res,404,'Not found');
       let content = fs.readFileSync(real);
-      if (home) content = content.toString().replace('<head>', `<head><meta name="safedesk-rotation-origin" content="http://127.0.0.1:${rotationPort}"><meta name="safedesk-wallet-actions" content="${walletActions === true ? 'enabled' : 'disabled'}">`);
+      if(integrity&&!integrity.matches(path.relative(base,real).split(path.sep).join('/'),content))return reply(res,503,'Build integrity changed. Rebuild and restart SafeDesk.');
+      if (home) content = content.toString().replace('<head>', `<head><meta name="safedesk-wallet-actions" content="${walletActions === true ? 'enabled' : 'disabled'}">`);
       const ext = path.extname(file), type = home ? 'text/html; charset=utf-8' : {'.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.woff':'font/woff','.woff2':'font/woff2'}[ext];
       res.writeHead(200,{...security,'content-type':type,'cache-control':home?'no-store':'public, max-age=31536000, immutable'});
       res.end(req.method === 'HEAD' ? '' : content);

@@ -1,6 +1,7 @@
 // Settings → About (SPEC §3.12): version, commit, the pinned data sources, and dependencies.
 import { deployments } from '@/core/deployments'
 import { useBundledRegistry } from '@/queries/clear-signing'
+import { LocalBuildDetails } from './local-build'
 
 const build = __PLAINSAFE_BUILD__
 
@@ -48,6 +49,7 @@ export function AboutSettings() {
           ))}
         </dl>
       </section>
+      <LocalBuildDetails />
       <section className="flex flex-col gap-2">
         <h3 className="font-medium">Dependencies</h3>
         <p className="text-sm text-muted-foreground">

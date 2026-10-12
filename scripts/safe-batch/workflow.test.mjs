@@ -62,7 +62,7 @@ test('settings are private environment files, redacted publicly, and never copie
  const f=fixture({empty:true});await f.workflow.configure({chainId:60808,rpcUrl:'https://custom.example/private-token',tenderly:{enabled:true,account:'account',project:'project',key:'test-private-key'}});
  assert.equal(privateConfig(f.root).SAFEDESK_RPC_60808,'https://custom.example/private-token');
  assert.deepEqual(publicSettings(f.root).rpcChains,[60808]);assert.ok(!JSON.stringify(publicSettings(f.root)).includes('private-token'));assert.ok(!JSON.stringify(publicSettings(f.root)).includes('test-private-key'));
- assert.equal(fs.statSync(path.join(f.root,'secrets/safedesk.env')).mode&0o777,0o600);
+ if(process.platform!=='win32')assert.equal(fs.statSync(path.join(f.root,'secrets/safedesk.env')).mode&0o777,0o600);
  await f.store.add('imported',signing);assert.ok(!fs.readFileSync(path.join(f.root,'imported/operation.json'),'utf8').includes('private-token'));assert.ok(!fs.readFileSync(path.join(f.root,'batch.json'),'utf8').includes('private-token'));
  assert.equal(f.store.operation('imported').rpc,'https://custom.example/private-token');
  await f.workflow.configure({tenderly:{enabled:false}});assert.equal(new TenderlyRunner(f.store).status().enabled,false);

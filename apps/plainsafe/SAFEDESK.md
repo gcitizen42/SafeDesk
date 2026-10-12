@@ -7,7 +7,7 @@ Greg Skriloff's copyright notice are preserved in `LICENSE`. `README.md` and
 
 ## Local Changes
 
-- SafeDesk branding and navigation between two separate localhost origins.
+- SafeDesk branding and nested workspaces on one localhost origin.
 - Read-only default for EIP-712 signing, `approveHash`, Safe creation and
   `execTransaction`. Their shared `useAccountOn` entry checks the launch
   policy before touching the wallet. Status is visible in the header.
@@ -17,7 +17,7 @@ Greg Skriloff's copyright notice are preserved in `LICENSE`. `README.md` and
   signature verification. Personal signatures use Safe's v=31/32 encoding.
 - Raw SafeTx editing/import, Safe Builder JSON with ABI inputs, code-verified
   CALL-only batching, unsigned edit copies, and proposal-desk exports.
-- Both origins share only a bounded public Chainlist catalogue. Management
+- Both workspaces use a bounded public Chainlist catalogue. Management
   adds other EVM networks; the proposal service remains on six known chains.
 - `source-map-js` overridden to 1.2.2 to fix GHSA-68fv-2mgg-jv7q. All other
   upstream lockfile package versions remain unchanged.
@@ -32,12 +32,13 @@ to verify both supported EOA methods without silently guessing a mode.
 
 ## Boundaries
 
-Safe Management serves built files and a read-only public-chain metadata
-endpoint on `http://127.0.0.1:8772`. The existing
-Rotations & Simulations API is on `http://127.0.0.1:8770`. Navigation uses
-normal links, not an iframe, reverse proxy, shared API token or `postMessage`
-bridge. Cross-origin batch requests are rejected. No credentials or existing
-collected signatures are automatically copied.
+One server on `http://127.0.0.1:8772` serves the built interface, public chain
+metadata and the token-protected `/api/rotations/` API. Rotations is a lazy
+loaded route at `/#/rotations`, rendered inside the shared app shell, not an
+iframe or second app. Its Shadow DOM is for style/lifecycle isolation only;
+both workspaces deliberately share the origin and trust boundary.
+Other-origin requests remain rejected. No credential or signature transfer
+is automatic; existing private batch files are retained.
 
 Configure each tab separately. PlainSafe keeps RPC URLs, packages and
 signatures in the browser's **unencrypted IndexedDB**. Backups include
@@ -78,13 +79,12 @@ malicious code, browser extensions or a compromised device.
 From the SafeDesk project root, use Node 22.12+ with npm:
 
 ```bash
-npm ci --ignore-scripts
-npm run setup:manager
-npm run build:manager
+npm run install:desk
 npm test
 npm run test:local
 npm run test:manager
 npm run audit:manager
+npm run verify:app
 npm start
 ```
 
@@ -111,10 +111,10 @@ networks; ordinary broadcast may be public.
 Custom ports and batch folder:
 
 ```bash
-npm start -- --port 8780 --manager-port 8782 --root /path/to/private-batch
+npm start -- --port 8782 --root /path/to/private-batch
 ```
 
-Links update for both ports. Keep management's port stable for IndexedDB.
+Both workspaces follow this one port. Keep it stable for IndexedDB.
 Previous rotation-only server and CLI:
 
 ```bash
@@ -141,3 +141,17 @@ the authority. Verify delegatecall stays operation 1 when importing elsewhere.
 
 No automatic upstream updates. Review source, lockfile, license, wallet
 actions and guards before updating this vendored copy.
+
+## Identity and Integrity
+
+Safe verification displays proxy and singleton runtime keccak256 hashes,
+the implementation address and pinned deployment source. These establish
+known code identity at the checked block based on RPC responses, not owner
+safety or auditing. Unrecognised code remains read-only.
+
+Build fingerprints in Settings > About and `npm run verify:app` cover built
+files and tracked source using SHA-256. The server refuses modified build
+files. The local manifest is not an external trust anchor; replacing both
+app and manifest can defeat it. Compare the source/commit with the public
+SafeDesk repository. Removing the Experimental header label does not make
+this an audited or official Safe product.

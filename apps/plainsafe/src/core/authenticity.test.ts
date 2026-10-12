@@ -1,4 +1,4 @@
-import { keccak256 } from 'viem'
+import { type Hex, keccak256 } from 'viem'
 import { describe, expect, it } from 'vitest'
 import { authenticityReason, checkAuthenticity, type DeploymentTables } from './authenticity'
 
@@ -40,7 +40,10 @@ describe('checkAuthenticity', () => {
       status: 'verified',
       version: '1.4.1',
       l2: false,
+      singleton,
       singletonName: 'Safe',
+      codeHash: keccak256(SINGLETON_141),
+      proxy: { codeHash: keccak256(PROXY_CODE) },
     })
     expect(a).not.toHaveProperty('versionMismatch')
   })
@@ -52,7 +55,32 @@ describe('checkAuthenticity', () => {
       singletonCode: SINGLETON_141,
       reportedVersion: '9.9.9',
     })
-    expect(a).toMatchObject({ status: 'verified', version: '1.4.1', versionMismatch: '9.9.9' })
+    expect(a).toMatchObject({
+      status: 'verified',
+      version: '1.4.1',
+      versionMismatch: '9.9.9',
+      codeHash: keccak256(SINGLETON_141),
+      proxy: { codeHash: keccak256(PROXY_CODE) },
+    })
+  })
+
+  it('returns the computed singleton hash even when pinned hashes use uppercase hex', () => {
+    const uppercaseTables: DeploymentTables = {
+      proxies: tables.proxies.map((p) => ({
+        ...p,
+        codeHash: `0x${p.codeHash.slice(2).toUpperCase()}` as Hex,
+      })),
+      singletons: tables.singletons.map((s) => ({
+        ...s,
+        codeHash: `0x${s.codeHash.slice(2).toUpperCase()}` as Hex,
+      })),
+    }
+    const a = checkAuthenticity(uppercaseTables, {
+      proxyCode: PROXY_CODE,
+      singleton,
+      singletonCode: SINGLETON_141,
+    })
+    expect(a).toMatchObject({ status: 'verified', codeHash: keccak256(SINGLETON_141) })
   })
 
   it('rejects addresses with no code', () => {
@@ -71,8 +99,9 @@ describe('checkAuthenticity', () => {
       proxyCode: '0x6080dd',
       singleton,
       singletonCode: SINGLETON_141,
+      reportedVersion: '1.4.1',
     })
-    expect(a.status).toBe('unknown-proxy')
+    expect(a).toEqual({ status: 'unknown-proxy', codeHash: keccak256('0x6080dd') })
   })
 
   it('refuses an unknown singleton, whatever VERSION() says', () => {
@@ -82,11 +111,23 @@ describe('checkAuthenticity', () => {
       singletonCode: '0x6080ee',
       reportedVersion: '1.4.1',
     })
-    expect(a.status).toBe('unknown-singleton')
+    expect(a).toEqual({
+      status: 'unknown-singleton',
+      singleton,
+      codeHash: keccak256('0x6080ee'),
+    })
     expect(authenticityReason(a)).toMatch(/Signing is disabled/)
-    expect(
-      checkAuthenticity(tables, { proxyCode: PROXY_CODE, singleton, singletonCode: '0x' }).status,
-    ).toBe('unknown-singleton')
+  })
+
+  it.each(['0x', undefined] as const)('refuses missing singleton code (%s)', (singletonCode) => {
+    const a = checkAuthenticity(tables, {
+      proxyCode: PROXY_CODE,
+      singleton,
+      singletonCode,
+      reportedVersion: '1.4.1',
+    })
+    expect(a).toEqual({ status: 'unknown-singleton', singleton, codeHash: keccak256('0x') })
+    expect(authenticityReason(a)).toMatch(/Signing is disabled/)
   })
 
   it('shows versions before 1.3.0 as unsupported', () => {
@@ -94,7 +135,9 @@ describe('checkAuthenticity', () => {
       proxyCode: PROXY_CODE,
       singleton,
       singletonCode: SINGLETON_120,
+      reportedVersion: '1.4.1',
     })
-    expect(a).toMatchObject({ status: 'unsupported-version', version: '1.2.0' })
+    expect(a).toEqual({ status: 'unsupported-version', version: '1.2.0', singleton })
+    expect(authenticityReason(a)).toMatch(/read-only/)
   })
 })

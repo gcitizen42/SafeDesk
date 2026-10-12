@@ -99,6 +99,7 @@ const viemChains = (): Plugin => ({
 // Settings → About (SPEC §3.12): version, commit and the dependencies actually installed.
 function buildInfo() {
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
+  const desk = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
   const git = (...args: string[]) => {
     try {
       return execFileSync('git', args, { encoding: 'utf8' }).trim()
@@ -114,7 +115,12 @@ function buildInfo() {
       const dep = JSON.parse(readFileSync(`node_modules/${name}/package.json`, 'utf8'))
       return { name, version: dep.version as string, license: (dep.license ?? '') as string }
     })
-  return { version: pkg.version as string, commit, dirty, dependencies }
+  return {
+    version: desk.name === 'safedesk' ? (desk.version as string) : (pkg.version as string),
+    commit,
+    dirty,
+    dependencies,
+  }
 }
 
 export default defineConfig({
