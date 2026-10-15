@@ -9,6 +9,7 @@ import {SafeWorkflow,ChainCatalog,generateFromSnapshot,verifyOwnerChanges,desire
 import {privateConfig,publicSettings,validateRpcUrl} from './settings.mjs';
 import {TenderlyRunner} from './tenderly.mjs';
 import {createServer} from './server.mjs';
+import {buildSafeTx} from '../prepare-safe-service-proposal.mjs';
 const owner=ethers.Wallet.createRandom(),other=ethers.Wallet.createRandom(),replacement=ethers.Wallet.createRandom();
 const safe='0x1111111111111111111111111111111111111111';
 const signing=normalizeSigning({domain:{chainId:60808,verifyingContract:safe},message:{to:safe,value:'0',data:'0x1234',operation:0,safeTxGas:'0',baseGas:'0',gasPrice:'0',gasToken:ethers.ZeroAddress,refundReceiver:ethers.ZeroAddress,nonce:'3'}});
@@ -48,6 +49,8 @@ function fixture({empty=false}={}){
  return{root,store,state,workflow,calls};
 }
 const serviceTx=confirmations=>({safe,...signing.message,safeTxHash:signing.safeTxHash,isExecuted:false,confirmations});
+const competingSigning=normalizeSigning({...signing,safeTxHash:undefined,message:{...signing.message,value:'1'}});
+const competingTx=()=>({safe,...competingSigning.message,safeTxHash:competingSigning.safeTxHash,isExecuted:false,confirmations:[]});
 test('Chainlist catalogue filters placeholders, untrusted protocols and unsupported chains, then caches',async()=>{
  let calls=0;const catalog=new ChainCatalog(async()=>{calls++;return Response.json([{chainId:60808,rpc:[{url:'https://public.example/rpc'},{url:'http://localhost:9000'},{url:'https://example/${KEY}'},{url:'wss://example/ws'}]},{chainId:999,rpc:['https://other.example']}]);});
  const result=await catalog.get();assert.equal(result.source,'chainlist.org');assert.equal(result.chains.length,6);assert.ok(result.chains.find(x=>x.chainId===60808).rpcs.includes('https://public.example/rpc'));assert.ok(!JSON.stringify(result).includes('${KEY}'));await catalog.get();assert.equal(calls,1);
@@ -91,7 +94,7 @@ test('no-op, stale snapshot and queued nonce block preparation without overwriti
  const f=fixture({empty:true}),input={id:'new-safe',chainId:60808,safe,newOwners:[owner.address,replacement.address],threshold:2};input.snapshot=await f.workflow.inspect(input);
  await assert.rejects(f.workflow.prepare({...input,newOwners:[owner.address,other.address]}),/No owner/);
  f.state.nonce=4;await assert.rejects(f.workflow.prepare(input),/state changed/);f.state.nonce=3;
- f.state.queue=[{nonce:3,safeTxHash:ethers.ZeroHash}];await assert.rejects(f.workflow.prepare(input),/already queued/);assert.equal(f.store.ids().length,0);assert.equal(fs.existsSync(path.join(f.root,'new-safe')),false);
+ f.state.queue=[competingTx()];input.snapshot=await f.workflow.inspect(input);await assert.rejects(f.workflow.prepare(input),/already queued/);assert.equal(f.store.ids().length,0);assert.equal(fs.existsSync(path.join(f.root,'new-safe')),false);
 });
 test('status separates local from published approvals, validates signatures and only makes read-only execution checks',async()=>{
  const f=fixture();f.store.state.signatures=[{id:'example',safeTxHash:signing.safeTxHash,sender:owner.address,signature:typed}];f.state.transaction=serviceTx([{owner:other.address,signature:typedOther}]);
@@ -106,7 +109,7 @@ test('bad service approvals, unavailable queue, wrong wallet chain and stale non
  const f=fixture();f.state.transaction=serviceTx([{owner:owner.address,signature:typedOther},{owner:other.address,signature:'0x1234'}]);
  let status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:1});assert.equal(status.unverifiableApprovals,2);assert.equal(status.publishedApprovals,0);assert.equal(status.wallet.canSign,false);assert.equal(status.execution.canExecute,false);
  f.state.serviceUnavailable=true;status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:60808});assert.equal(status.serviceKnown,false);assert.equal(status.wallet.canSign,false);assert.equal(status.execution.canExecute,false);
- f.state.serviceUnavailable=false;f.state.transaction=null;f.state.queue=[{nonce:3,safeTxHash:ethers.ZeroHash}];status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:60808});assert.equal(status.conflicts.length,1);assert.equal(status.wallet.canSign,false);
+ f.state.serviceUnavailable=false;f.state.transaction=null;f.state.queue=[competingTx()];status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:60808});assert.equal(status.conflicts.length,1);assert.equal(status.wallet.canSign,false);
  f.state.queue=[];f.state.nonce=4;status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:60808});assert.equal(status.unchanged,false);assert.equal(status.execution.canExecute,false);
 });
 test('service transaction payload mismatch and unapproved v=1 signatures cannot count toward readiness',async()=>{
@@ -131,4 +134,189 @@ test('new installation boots with setup required; settings and status endpoints 
  assert.equal((await fetch(base+'/api/settings',{method:'POST',headers,body:JSON.stringify({tenderly:{enabled:false}})})).status,200);
  assert.equal((await fetch(base+'/secrets/safedesk.env')).status,404);assert.ok((await fetch(base).then(r=>r.text())).includes('<title>SafeDesk | Safe Ownership Management</title>'));
  }finally{await new Promise(r=>server.close(r));}
+});
+
+const rotationInput=()=>({id:'replacement-safe',chainId:60808,safe,newOwners:[owner.address,replacement.address],threshold:2});
+async function candidateFor(f,input) {
+ const before=await f.workflow.inspect(input),builder=await generateFromSnapshot(before,input.newOwners,input.threshold);
+ return normalizeSigning({domain:{chainId:60808,verifyingContract:safe},message:buildSafeTx(builder,before.nonce)});
+}
+const queuedSigning=s=>({safe,...s.message,safeTxHash:s.safeTxHash,isExecuted:false,confirmations:[]});
+function setReplaces(f,hashes) {
+ const file=path.join(f.root,'example/operation.json'),op=JSON.parse(fs.readFileSync(file));
+ fs.writeFileSync(file,JSON.stringify({...op,replaces:hashes}));
+}
+test('inspect exposes verified same-Safe/current-nonce queue and local identities; outages remain unknown',async()=>{
+ const f=fixture();f.state.queue=[competingTx()];
+ const inspected=await f.workflow.inspect({chainId:60808,safe});
+ assert.equal(inspected.queueKnown,true);assert.equal(inspected.queueError,null);
+ assert.deepEqual(inspected.queuedTransactions,[{hash:competingSigning.safeTxHash.toLowerCase(),nonce:'3',to:safe,confirmations:0,executed:false}]);
+ assert.deepEqual(inspected.localOperations,[{id:'example',hash:signing.safeTxHash.toLowerCase(),nonce:'3'}]);
+ f.state.serviceUnavailable=true;const unavailable=await f.workflow.inspect({chainId:60808,safe});
+ assert.equal(unavailable.queueKnown,false);assert.match(unavailable.queueError,/unknown/);assert.deepEqual(unavailable.owners,f.state.owners);
+ const input=rotationInput();input.snapshot=unavailable;await assert.rejects(f.workflow.prepare(input),/queue is unknown/);
+ assert.equal(f.store.ids().length,1);
+});
+test('replacement acknowledges exact queue/local union, preserves old folders and never carries evidence across hashes',async()=>{
+ const f=fixture(),input=rotationInput();f.state.queue=[competingTx()];input.snapshot=await f.workflow.inspect(input);
+ const original=fs.readFileSync(path.join(f.root,'example/operation.json'),'utf8');
+ await assert.rejects(f.workflow.prepare(input),/explicit replacement/);
+ input.replacement={confirm:'REPLACE',acknowledgedHashes:[competingSigning.safeTxHash]};
+ await assert.rejects(f.workflow.prepare(input),/incomplete/);
+ input.replacement.acknowledgedHashes.push(signing.safeTxHash);
+ const prepared=await f.workflow.prepare(input);
+ assert.deepEqual(prepared.replaces,[competingSigning.safeTxHash,signing.safeTxHash].map(x=>x.toLowerCase()).sort());
+ assert.equal(prepared.alreadyProposed,false);assert.equal(f.store.list().find(x=>x.id===prepared.id).simulation,null);
+ assert.deepEqual(f.store.signatures(f.store.operation(prepared.id)),[]);
+ assert.equal(fs.readFileSync(path.join(f.root,'example/operation.json'),'utf8'),original);
+ assert.deepEqual(f.store.list().find(x=>x.id===prepared.id).replaces,prepared.replaces);
+ const op=f.store.operation(prepared.id);await assert.rejects(f.store.check(prepared.id,{ready:true}),/simulation/);
+ f.store.attach(prepared.id,'',{status:'PASSED',safeTxHash:op.safeTxHash});
+ assert.equal((await f.store.check(prepared.id,{ready:true})).reviewedConflicts.length,2);
+ const status=await f.workflow.transactionStatus(prepared.id,{account:owner.address,walletChainId:60808});
+ assert.equal(status.wallet.canSign,true);assert.equal(status.unreviewedConflicts.length,0);assert.equal(status.execution.canExecute,false);
+});
+test('already-published candidate adoption excludes candidate from both acknowledgements and conflicts, without service POST',async()=>{
+ const f=fixture(),input=rotationInput(),candidate=await candidateFor(f,input);
+ f.state.queue=[queuedSigning(candidate),competingTx()];input.snapshot=await f.workflow.inspect(input);
+ input.replacement={confirm:'REPLACE',acknowledgedHashes:[candidate.safeTxHash,competingSigning.safeTxHash,signing.safeTxHash]};
+ const result=await f.workflow.prepare(input);
+ assert.equal(result.hash,candidate.safeTxHash);assert.equal(result.alreadyProposed,true);
+ assert.ok(!result.replaces.includes(candidate.safeTxHash));
+ assert.equal(f.store.list().find(x=>x.id===result.id).result.verified,true);
+ assert.ok(f.calls.filter(c=>c.method==='POST').every(c=>c.body?.jsonrpc));
+ input.snapshot=await f.workflow.inspect(input);const existing=await f.workflow.prepare({...input,id:'duplicate-name'});
+ assert.equal(existing.id,result.id);assert.equal(f.store.ids().length,2);
+ assert.equal(fs.existsSync(path.join(f.root,'duplicate-name')),false);
+});
+test('a sole published candidate can be adopted without replacement acknowledgement and duplicate prepare is idempotent',async()=>{
+ const f=fixture({empty:true}),input=rotationInput(),candidate=await candidateFor(f,input);
+ f.state.queue=[queuedSigning(candidate)];input.snapshot=await f.workflow.inspect(input);
+ const result=await f.workflow.prepare(input);assert.equal(result.alreadyProposed,true);assert.deepEqual(result.replaces,[]);
+ input.snapshot=await f.workflow.inspect(input);assert.equal((await f.workflow.prepare(input)).id,result.id);
+ assert.equal(f.store.ids().length,1);
+ const file=path.join(f.root,result.id,'operation.json'),op=JSON.parse(fs.readFileSync(file));
+ fs.writeFileSync(file,JSON.stringify({...op,threshold:1}));
+ await assert.rejects(f.workflow.prepare(input),/name already exists/);
+ assert.equal(f.store.ids().length,1);
+});
+test('replacement rejects stale inspections and queue arrivals or disappearances during generation',async()=>{
+ const f=fixture({empty:true}),input=rotationInput();f.state.queue=[competingTx()];input.snapshot=await f.workflow.inspect(input);
+ input.replacement={confirm:'REPLACE',acknowledgedHashes:[competingSigning.safeTxHash]};
+ f.state.queue=[];await assert.rejects(f.workflow.prepare(input),/review changed/);
+ f.state.queue=[competingTx()];input.snapshot=await f.workflow.inspect(input);
+ const original=f.store.rpc.bind(f.store);f.store.rpc=async(op,method,params)=>{
+  const result=await original(op,method,params);
+  if(method==='eth_call'&&SAFE_ABI.parseTransaction({data:params[0].data}).name==='getTransactionHash')f.state.queue=[];
+  return result;
+ };
+ await assert.rejects(f.workflow.prepare(input),/changed during preparation/);assert.equal(f.store.ids().length,0);
+ f.state.queue=[competingTx()];input.snapshot=await f.workflow.inspect(input);
+ const extra=normalizeSigning({...signing,safeTxHash:undefined,message:{...signing.message,value:'2'}});
+ f.store.rpc=async(op,method,params)=>{const result=await original(op,method,params);if(method==='eth_call'&&SAFE_ABI.parseTransaction({data:params[0].data}).name==='getTransactionHash')f.state.queue.push(queuedSigning(extra));return result;};
+ await assert.rejects(f.workflow.prepare(input),/changed during preparation/);assert.equal(fs.existsSync(path.join(f.root,input.id)),false);
+});
+test('reviewed-only conflicts allow signing but never execution, while new conflicts block readiness',async()=>{
+ const f=fixture();f.state.queue=[competingTx()];setReplaces(f,[competingSigning.safeTxHash]);
+ f.state.transaction=serviceTx([{owner:owner.address,signature:typed},{owner:other.address,signature:typedOther}]);
+ let status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:60808});
+ assert.equal(status.reviewedConflicts.length,1);assert.equal(status.wallet.canSign,true);assert.equal(status.execution.canExecute,false);assert.equal(status.execution.checked,false);
+ assert.match(status.execution.status,/separate coordination/);await f.store.check('example',{ready:true});
+ const extra=normalizeSigning({...signing,safeTxHash:undefined,message:{...signing.message,value:'2'}});f.state.queue.push(queuedSigning(extra));
+ status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:60808});
+ assert.equal(status.unreviewedConflicts.length,1);assert.equal(status.wallet.canSign,false);await assert.rejects(f.store.check('example',{ready:true}),/Another/);
+});
+test('HTTP check ready enforces simulation and proposal review tokens bind the current competing hashes',async()=>{
+ const f=fixture(),port=33000+Math.floor(Math.random()*1000);
+ f.state.queue=[competingTx()];setReplaces(f,[competingSigning.safeTxHash]);
+ await f.store.collect('example',owner.address,typed);
+ const server=createServer(f.root,{store:f.store,workflow:f.workflow,port});await new Promise(r=>server.listen(port,'127.0.0.1',r));
+ try {
+  const base=`http://127.0.0.1:${port}`,batch=await fetch(base+'/api/batch').then(r=>r.json());
+  const headers={'content-type':'application/json','x-batch-token':batch.token};
+  const post=(route,input)=>fetch(base+route,{method:'POST',headers,body:JSON.stringify(input)});
+  assert.equal((await fetch(base+'/workspace.mjs')).status,200);
+  const review=await (await post('/api/review',{ids:['example']})).json();
+  assert.deepEqual(review.result.items[0].competingHashes,[competingSigning.safeTxHash]);
+  assert.equal((await post('/api/propose',{reviewToken:review.result.reviewToken,confirm:'REPLACE'})).status,400);
+  f.state.queue=[];
+  const stale=await post('/api/propose',{reviewToken:review.result.reviewToken,confirm:'PROPOSE'});
+  assert.equal(stale.status,400);assert.match((await stale.json()).error,/Review changed/);
+  f.state.queue=[competingTx()];
+  fs.unlinkSync(path.join(f.root,'example/local-simulation.json'));
+  assert.equal((await post('/api/check',{id:'example'})).status,200);
+  assert.equal((await post('/api/check',{id:'example',ready:true})).status,400);
+  assert.ok(f.calls.filter(c=>c.method==='POST').every(c=>c.body?.jsonrpc));
+ } finally {await new Promise(r=>server.close(r));}
+});
+
+test('disappearing reviewed alternatives invalidate signing and review and never enable execution',async()=>{
+ const f=fixture();f.state.queue=[competingTx()];setReplaces(f,[competingSigning.safeTxHash]);
+ await f.store.collect('example',owner.address,typed);
+ f.state.transaction=serviceTx([{owner:owner.address,signature:typed},{owner:other.address,signature:typedOther}]);
+ f.state.queue=[];
+ await assert.rejects(f.store.check('example',{ready:true}),/Review changed/);
+ await assert.rejects(f.store.collect('example',other.address,typedOther),/Review changed/);
+ await assert.rejects(f.store.review(['example']),/Review changed/);
+ const status=await f.workflow.transactionStatus('example',{account:owner.address,walletChainId:60808});
+ assert.equal(status.replacementReviewStale,true);assert.equal(status.wallet.canSign,false);
+ assert.equal(status.execution.canExecute,false);assert.equal(status.execution.checked,false);
+ assert.match(status.execution.status,/review changed/);
+ assert.ok(f.calls.filter(c=>c.method==='POST').every(c=>c.body?.jsonrpc));
+});
+
+test('newly reviewed alternatives create a fresh same-hash revision without changing old files or copying evidence',async()=>{
+ const f=fixture({empty:true}),input={...rotationInput(),id:'first-revision'};
+ input.snapshot=await f.workflow.inspect(input);const first=await f.workflow.prepare(input),firstOp=f.store.operation(first.id);
+ f.store.attach(first.id,'',{status:'PASSED',safeTxHash:first.hash});
+ await f.store.collect(first.id,owner.address,await owner.signTypedData(firstOp.signing.domain,firstOp.signing.types,firstOp.signing.message));
+ const dir=path.join(f.root,first.id),original=new Map(fs.readdirSync(dir).map(name=>[name,fs.readFileSync(path.join(dir,name),'utf8')]));
+ const originalSimulation=JSON.stringify(f.store.state.simulations[first.id]),originalSignatures=JSON.stringify(f.store.signatures(firstOp));
+ f.state.queue=[queuedSigning(firstOp.signing),competingTx()];
+ const updated={...input,id:'new-revision',snapshot:await f.workflow.inspect(input),replacement:{confirm:'REPLACE',acknowledgedHashes:[first.hash,competingSigning.safeTxHash]}};
+ await assert.rejects(f.workflow.prepare({...updated,id:first.id}),/name already exists/);
+ const revised=await f.workflow.prepare(updated);
+ assert.equal(revised.id,'new-revision');assert.equal(revised.hash,first.hash);assert.equal(revised.alreadyProposed,true);
+ assert.deepEqual(revised.replaces,[competingSigning.safeTxHash]);assert.equal(f.store.ids().length,2);
+ for(const[name,contents]of original)assert.equal(fs.readFileSync(path.join(dir,name),'utf8'),contents);
+ assert.equal(JSON.stringify(f.store.state.simulations[first.id]),originalSimulation);
+ assert.equal(JSON.stringify(f.store.signatures(f.store.operation(first.id))),originalSignatures);
+ const newOp=f.store.operation(revised.id);assert.equal(newOp.simulation,null);assert.deepEqual(f.store.signatures(newOp),[]);
+ assert.equal(f.store.state.simulations[revised.id],undefined);
+ await assert.rejects(f.store.check(revised.id,{ready:true}),/simulation/);
+ const status=await f.workflow.transactionStatus(revised.id,{account:owner.address,walletChainId:60808});
+ assert.equal(status.localSignatures,0);assert.equal(status.wallet.canSign,false);
+ updated.snapshot=await f.workflow.inspect(updated);
+ assert.equal((await f.workflow.prepare({...updated,id:'not-created'})).id,revised.id);
+ assert.equal(fs.existsSync(path.join(f.root,'not-created')),false);
+ assert.ok(f.calls.filter(c=>c.method==='POST').every(c=>c.body?.jsonrpc));
+});
+test('imported or draft candidate metadata permits a new validated SDK revision, not reuse or overwrite',async()=>{
+ for(const flag of ['imported','draft']) {
+  const f=fixture({empty:true}),input={...rotationInput(),id:'older-candidate'};
+  input.snapshot=await f.workflow.inspect(input);const first=await f.workflow.prepare(input);
+  const file=path.join(f.root,first.id,'operation.json'),op=JSON.parse(fs.readFileSync(file));
+  fs.writeFileSync(file,JSON.stringify({...op,[flag]:true}));const original=fs.readFileSync(file,'utf8');
+  const revised=await f.workflow.prepare({...input,id:'validated-revision',snapshot:await f.workflow.inspect(input)});
+  assert.equal(revised.id,'validated-revision');assert.equal(revised.hash,first.hash);assert.deepEqual(revised.replaces,[]);
+  assert.equal(fs.readFileSync(file,'utf8'),original);assert.equal(f.store.operation(revised.id).simulation,null);
+  assert.deepEqual(f.store.signatures(f.store.operation(revised.id)),[]);
+ }
+});
+test('same-owner relinking with unchanged nonce invalidates snapshot, post-generation state, check and status',async()=>{
+ const f=fixture({empty:true}),input=rotationInput();input.snapshot=await f.workflow.inspect(input);
+ f.state.owners.reverse();await assert.rejects(f.workflow.prepare(input),/state changed/);assert.equal(f.store.ids().length,0);
+ f.state.owners.reverse();input.snapshot=await f.workflow.inspect(input);
+ const original=f.store.rpc.bind(f.store);let relink=true;
+ f.store.rpc=async(op,method,params)=>{
+  const value=await original(op,method,params);
+  if(relink&&method==='eth_call'&&SAFE_ABI.parseTransaction({data:params[0].data}).name==='getTransactionHash'){f.state.owners.reverse();relink=false;}
+  return value;
+ };
+ await assert.rejects(f.workflow.prepare(input),/state changed during preparation/);assert.equal(f.store.ids().length,0);
+ f.store.rpc=original;input.snapshot=await f.workflow.inspect(input);const prepared=await f.workflow.prepare(input);
+ f.store.attach(prepared.id,'',{status:'PASSED',safeTxHash:prepared.hash});
+ f.state.owners.reverse();await assert.rejects(f.store.check(prepared.id,{ready:true}),/owner order/);
+ const status=await f.workflow.transactionStatus(prepared.id,{account:owner.address,walletChainId:60808});
+ assert.equal(status.unchanged,false);assert.equal(status.wallet.canSign,false);assert.equal(status.execution.canExecute,false);
 });

@@ -10,6 +10,7 @@ import { AddSafe } from '@/features/safes/add-safe'
 import { CreateSafe } from '@/features/safes/create-safe'
 import { Home } from '@/features/safes/home'
 import { SafeOverview } from '@/features/safes/safe-overview'
+import { selectedSafeFromRoute, selectedSafeStore } from '@/features/safes/selected-safe'
 import { SettingsScreen } from '@/features/settings/settings-screen'
 import { isSetupDone, setReturnTo } from '@/features/setup/return-to'
 import { SetupScreen } from '@/features/setup/setup-screen'
@@ -23,6 +24,11 @@ const RotationsScreen = lazy(() =>
     default: module.RotationsScreen,
   })),
 )
+const OtherChainsScreen = lazy(() =>
+  import('@/features/other-chains/other-chains-screen').then((module) => ({
+    default: module.OtherChainsScreen,
+  })),
+)
 
 /** Routes that work before setup is done: setup itself, opening a shared link, and Verify. */
 const openBeforeSetup = (location: string) =>
@@ -31,12 +37,22 @@ const openBeforeSetup = (location: string) =>
   location.startsWith('/import/') ||
   location === '/verify' ||
   location === '/rotations' ||
+  location === '/other-chains' ||
   location === '/settings/about'
 
 export function Routes() {
   const settings = useLoadedSettings()
   const [location, navigate] = useLocation()
   const gated = !isSetupDone(settings) && !openBeforeSetup(location)
+
+  useEffect(() => {
+    if (gated) return
+    const safe = selectedSafeFromRoute(
+      location,
+      settings.chains.map((chain) => chain.id),
+    )
+    if (safe) selectedSafeStore.select(safe)
+  }, [gated, location, settings.chains])
 
   useEffect(() => {
     if (gated) {
@@ -49,6 +65,17 @@ export function Routes() {
 
   return (
     <Switch>
+      <Route path="/other-chains">
+        <Suspense
+          fallback={
+            <div className="px-4 py-8" role="status">
+              Loading other chains...
+            </div>
+          }
+        >
+          <OtherChainsScreen />
+        </Suspense>
+      </Route>
       <Route path="/rotations">
         <Suspense
           fallback={

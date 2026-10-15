@@ -8,6 +8,14 @@ const safe='0x1111111111111111111111111111111111111111',other='0x222222222222222
 const args={chainId:1,safe,nonce:'7'};
 function row(nonce=7,change={}){const tx={to:other,value:'0',data:'0x',operation:1,safeTxGas:'123',baseGas:'456',gasPrice:'0',gasToken:ethers.ZeroAddress,refundReceiver:other,nonce};return{safe,...tx,safeTxHash:ethers.TypedDataEncoder.hash({chainId:1,verifyingContract:safe},safeTxTypes(),tx),isExecuted:false,confirmations:[],...change};}
 const response=value=>new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}});
+test('queue links use the BOB Safe app only for BOB and leave other Safe links unchanged',async()=>{
+ const reader=new SafeQueueReader({fetcher:async()=>response({results:[],next:null})});
+ const bob=await reader.get({...args,chainId:60808});
+ assert.equal(bob.safeUrl,`https://safe.gobob.xyz/transactions/queue?safe=bob:${safe}`);
+ assert.equal(bob.service,'https://transaction.safe.gobob.xyz');
+ const ethereum=await reader.get(args);
+ assert.equal(ethereum.safeUrl,`https://app.safe.global/transactions/queue?safe=eth:${safe}`);
+});
 test('pending reader uses the pinned current Safe endpoint, GET only, and preserves all fields',async()=>{
  const calls=[],reader=new SafeQueueReader({fetcher:async(url,opts)=>{calls.push({url,opts});return response({results:[row(),row(8),row(6),row(9,{isExecuted:true})],next:null});}});
  const result=await reader.get(args);assert.equal(result.status,'ok');assert.equal(result.complete,true);assert.equal(result.transactions.length,2);assert.equal(result.transactions[0].tx.operation,1);assert.equal(result.transactions[0].tx.baseGas,'456');assert.equal(result.transactions[0].tx.refundReceiver,other);

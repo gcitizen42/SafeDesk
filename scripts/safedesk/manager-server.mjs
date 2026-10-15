@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {PublicChainCatalog} from './chain-catalog.mjs';
 import {SafeQueueReader} from './safe-queue.mjs';
+import {createOtherChainsHandler} from '../other-chains/http.mjs';
 
 export const defaultDist = path.resolve(import.meta.dirname, '../../apps/plainsafe/dist');
 export const upstreamCommit = '9a23f9ab38501cf09bb5464b2b5684314e9fb7d5';
@@ -13,7 +14,7 @@ export function validPort(value) {
 }
 
 // One local origin serves the app and a deliberately namespaced, token-protected batch API.
-export function createManagerServer({dist = defaultDist, port = 8772, walletActions = false, catalog = new PublicChainCatalog(), batchHandler, integrity, queueReader = new SafeQueueReader()} = {}) {
+export function createManagerServer({dist = defaultDist, port = 8772, walletActions = false, catalog = new PublicChainCatalog(), batchHandler, integrity, queueReader = new SafeQueueReader(), otherChainsHandler = createOtherChainsHandler()} = {}) {
   validPort(port);
   const index = path.join(dist, 'index.html');
   if (!fs.existsSync(index)) throw Error('Build Safe Management first: npm run setup:manager && npm run build:manager');
@@ -26,6 +27,7 @@ export function createManagerServer({dist = defaultDist, port = 8772, walletActi
     try {pathname = decodeURIComponent(new URL(req.url, `http://127.0.0.1:${port}`).pathname);} catch {return reply(res,400,'Invalid path');}
     for(const [name,value]of Object.entries(security))res.setHeader(name,value);
     if(pathname.startsWith('/api/rotations/')&&batchHandler)return batchHandler(req,res);
+    if(pathname.startsWith('/api/other-chains/'))return otherChainsHandler(req,res,pathname);
     if (!['GET','HEAD'].includes(req.method)) return reply(res,405,'Read-only file server');
     if(pathname==='/api/safe-queue'){
       if(req.method==='HEAD'){res.writeHead(200,{...security,'content-type':'application/json','cache-control':'no-store'});return res.end();}

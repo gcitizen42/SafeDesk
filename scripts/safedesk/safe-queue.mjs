@@ -45,7 +45,7 @@ export class SafeQueueReader{
  async get(input){
   const chainId=Number(input.chainId);if(!Number.isSafeInteger(chainId)||chainId<1)throw Error('Invalid chain ID');
   const safe=address(input.safe),nonce=uint(input.nonce),service=services[chainId]||null;
-  const base={chainId,safe,checkedAt:new Date(this.now()).toISOString(),service,safeUrl:service?`https://app.safe.global/transactions/queue?safe=${prefixes[chainId]}:${safe}`:null,rejected:0,transactions:[]};
+  const base={chainId,safe,checkedAt:new Date(this.now()).toISOString(),service,safeUrl:service?`${chainId===60808?'https://safe.gobob.xyz':'https://app.safe.global'}/transactions/queue?safe=${prefixes[chainId]}:${safe}`:null,rejected:0,transactions:[]};
   if(!service)return{...base,status:'unsupported',complete:false,warning:'No trusted Safe transaction service is configured for this network. Published queue is unknown.'};
   const key=`${chainId}:${safe.toLowerCase()}:${nonce}`,cached=this.cache.get(key);
   if(cached&&this.now()-cached.at<15000)return cached.value;

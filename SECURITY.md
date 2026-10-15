@@ -25,6 +25,15 @@ before using production assets.
   verified MultiSendCallOnly. Never silently convert a delegatecall to CALL.
 - Safe authenticity compares runtime keccak256 hashes to pinned deployment
   data. It does not establish owner safety or verify RPC truthfulness.
+- Other Chains has no signing/proposal/execution interface. Sui uses pinned
+  public gRPC/GraphQL providers, checks mainnet identity and verifies that
+  public policies derive the source/destination addresses. It builds exact
+  selected-object migrations, not in-place native Sui owner changes. MSafe's
+  reserved nonce key is not a human owner. Capability transfers require an
+  explicit acknowledgement; SUI gas stays at the source. Native unsigned
+  simulation checks real gas and destination ownership, not cryptographic
+  source authorization or destination private-key possession. Confirm wallet
+  access and any required MSafe registration independently before proposing.
 - Published queue reads use pinned Safe service endpoints through the local
   read-only server. Redirects and foreign pagination are rejected; results
   are bounded and full transaction hashes rechecked. Service confirmation
@@ -36,6 +45,16 @@ before using production assets.
   defeat this check; verify the source/commit independently.
 - Proposal publication is not execution. The proposal desk still requires
   a matching successful simulation and current owners/nonce/hash checks.
+- Owner-management selection is keyed by chain and Safe address. Changing it
+  clears unfinished wizard/review state, not completed preparations or stored
+  signatures. Adding a My Safes record still requires code authenticity checks.
+- Intentional replacements record an explicit review of every competing
+  current-nonce hash. Queued payloads are independently rehashed; unknown,
+  stale or additional alternatives block the relevant action. A matching
+  manually published candidate is adopted locally, never automatically reposted.
+  No old signatures/simulation are transferred to changed calldata. Reviewed
+  alternatives may permit signing/proposals, but still block execution here.
+  Publishing a replacement does not cancel the old proposal or revoke signatures.
 - Ordinary wallet broadcasts may be public. There is no private-relay
   implementation; do not use this for the Republic incident execution.
 

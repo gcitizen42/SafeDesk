@@ -116,9 +116,8 @@ const SAFE_PREFIX: Readonly<Record<number, string>> = {
 /** Construct, rather than trust, a service-provided navigation URL. Unknown chains get no link. */
 export function publishedSafeUrl(chainId: number, safe: Address): string | null {
   const prefix = SAFE_PREFIX[chainId]
-  return prefix
-    ? `https://app.safe.global/transactions/queue?safe=${prefix}:${getAddress(safe)}`
-    : null
+  const origin = chainId === 60808 ? 'https://safe.gobob.xyz' : 'https://app.safe.global'
+  return prefix ? `${origin}/transactions/queue?safe=${prefix}:${getAddress(safe)}` : null
 }
 
 const unknownQueue = (): PublishedQueue => ({

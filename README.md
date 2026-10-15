@@ -1,13 +1,16 @@
 # SafeDesk
 
-SafeDesk is one local application with two nested workspaces at the same address:
+SafeDesk is one local application with nested workspaces at the same address:
 
 - **My Safe's**, powered by a pinned, modified MIT-licensed copy of [PlainSafe](https://github.com/gskril/plainsafe): configure RPCs, inspect Safes and pending published transactions, build/edit/import transactions, choose EIP-712 or Ledger hash signing and share verified packages. Starts read-only.
-- **Safe Ownership Management**, our multichain workflow: choose owners/thresholds, generate calls using [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager), simulate with Tenderly, collect Ledger signatures and publish reviewed proposals.
+- **Safe Ownership Management**, linked to the Safe you are viewing: select/add a Safe, review its own final owners/threshold, generate calls using [`safe-owner-manager`](https://github.com/GNSPS/safe-owner-manager), simulate, collect Ledger signatures and publish reviewed proposals. Intentional same-nonce replacements require an explicit hash-bound review.
+- **Other Chains**, starting with Sui/MSafe: inspect public vault policies and authority objects, derive destination multisigs, build unsigned Mysten V2 Plain Transaction JSON and run native Sui simulation. No wallet, signing, proposal or execution access. [Sui browser and CLI runbook](docs/OTHER_CHAINS.md).
 
-Both workspaces are routes inside the PlainSafe-powered interface, served by one localhost process. Rotation endpoints are namespaced under `/api/rotations/` and retain session-token, origin and confirmation checks. They share the app's trust boundary, not an automatic credential/signature transfer. **SafeDesk is unaudited; local hosting is not a security certification.** Read [Security](SECURITY.md) and the [integration guide](apps/plainsafe/SAFEDESK.md) before enabling management wallet actions. Credit and the original license are preserved in [Third-Party Notices](THIRD_PARTY_NOTICES.md).
+All workspaces are routes inside the PlainSafe-powered interface, served by one localhost process. Rotation endpoints are namespaced under `/api/rotations/` and retain session-token, origin and confirmation checks. Other-chain endpoints only read/build/simulate. They share the app's trust boundary, not an automatic credential/signature transfer. **SafeDesk is unaudited; local hosting is not a security certification.** Read [Security](SECURITY.md) and the [integration guide](apps/plainsafe/SAFEDESK.md) before enabling management wallet actions. Credit and the original license are preserved in [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 The rotations tab's live panel shows nonce, verified published approvals, local signatures, conflicts and wallet readiness. Its execution/gas check is read-only; use Safe to execute separately. The management tab can sign/execute only when explicitly enabled at launch and confirmed in the wallet. It is not a private relay and must not be used for the Republic incident operation.
+
+Open a Safe in **My Safe's** and select **Manage owners**, or switch workspaces: that chain/address stays selected. The ownership selector combines saved, recent and prepared Safes. **Prepare rotation** starts a fresh wizard for that Safe; **Add Safe** starts a blank one. Draft owner lists are not reused between Safes. A manually proposed exact transaction can be recognised locally without proposing it twice. Unexpected conflicts, stale state and missing simulation still block signing/proposals; reviewed replacements do not cancel old transactions or enable automatic execution.
 
 ## Quick Start
 
@@ -75,7 +78,7 @@ In management, open a Safe and choose **New transaction**. Native/token transfer
 - **Edit** and **Edit as new draft** never mutate a signed package. Changed fields generate a different hash and need new signatures; the original remains in the queue.
 - Export a Safe Builder JSON file, full proposal signing data, and a verified signature collection. Full signing data is authoritative for nonce/gas/refund fields; standard Builder JSON is not a signature package.
 
-To publish through the proposal desk, use a supported chain, export the operation's **Proposal signing data**, import it using the same operation name in Rotations & Simulations, attach/run a matching successful simulation, import **Proposal signatures**, then **Review proposals** and confirm publication. CLI equivalents remain available. No export, editing or preparation sends an onchain transaction.
+To publish through the proposal desk, use a supported chain, export the operation's **Proposal signing data**, import it using the same operation name in Safe Ownership Management, attach/run a matching successful simulation, import **Proposal signatures**, then **Review proposals** and confirm publication. CLI equivalents remain available. No export, editing or preparation sends an onchain transaction.
 
 **DELEGATECALL must remain operation 1.** Some external Builder imports may alter it; verify the full resulting SafeTx hash before signing. Proposal publication is not execution, and this app is not a private relay.
 

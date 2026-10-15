@@ -10,6 +10,7 @@ import {
   Repeat,
   Star,
   Trash2,
+  Users,
 } from 'lucide-react'
 import type { Address } from 'viem'
 import { Link } from 'wouter'
@@ -33,6 +34,7 @@ import { useChain } from '@/queries/settings'
 import { useSwapContracts } from '@/queries/swap'
 import { AuthenticityBadge, AuthenticityDetails } from './authenticity-badge'
 import type { SafeSnapshot } from './load-safe'
+import { useSelectedSafe } from './selected-safe'
 import { hasSafe, safeRecord } from './store'
 import { useSafeParams } from './use-safe-params'
 
@@ -43,6 +45,7 @@ export function SafeOverview() {
 }
 
 function Overview({ chainId, address }: { chainId: number; address: Address }) {
+  const { selectSafe } = useSelectedSafe()
   const safe = useSafe(chainId, address)
   // Started now rather than once the Safe has loaded, so their reads share its batches (the
   // balances section below uses the same cached queries)
@@ -126,6 +129,14 @@ function Overview({ chainId, address }: { chainId: number; address: Address }) {
       {safe.data && (
         <>
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link
+                href="/rotations"
+                onClick={() => selectSafe({ chainId, address, ...(label ? { label } : {}) })}
+              >
+                <Users /> {verified ? 'Manage owners' : 'View ownership manager'}
+              </Link>
+            </Button>
             {verified ? (
               <Button asChild>
                 <Link href={`${base}/new`}>

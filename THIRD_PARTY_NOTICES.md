@@ -25,3 +25,17 @@ https://chainlist.org/rpcs.json. Metadata is untrusted until parsed, and RPC
 chain IDs must be verified before use. Inclusion is not an endorsement of a
 chain, endpoint, privacy policy or Safe deployment. No private RPC settings
 are uploaded to Chainlist.
+
+## Native Sui / MSafe
+
+The Other Chains backend uses the pinned `@mysten/sui` 2.35.0 SDK for native
+public-key/address derivation, transaction serialization and gRPC/GraphQL
+reads/simulation. SDK license and notices remain in the installed dependency.
+Source: https://github.com/MystenLabs/ts-sdks .
+
+MSafe's nonce-specifier format is derived from `src/account.ts` and
+`src/constants.ts` distributed in the official `@msafe/sui3-utils` 5.1.0 npm
+package, consistent with https://doc.m-safe.io/sui/faq/glossary . The MSafe SDK
+is not installed, its proprietary/private backend is not copied, and no
+MSafe authentication or execution integration is included. SafeDesk is not
+an official MSafe product and does not claim endorsement.

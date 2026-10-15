@@ -1,4 +1,4 @@
-import { Settings, ShieldCheck, Users } from 'lucide-react'
+import { Layers3, Settings, ShieldCheck, Users } from 'lucide-react'
 import { Link, useLocation } from 'wouter'
 import { Select } from '@/components/select'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ export function Header() {
     { network, setNetwork } = useNetworkScope(),
     [location, navigate] = useLocation()
   const rotations = location === '/rotations'
+  const otherChains = location === '/other-chains'
   return (
     <header className="border-b">
       <div className="mx-auto flex min-h-16 max-w-4xl flex-wrap items-center gap-2 px-4 py-3">
@@ -21,7 +22,7 @@ export function Header() {
           <ShieldCheck className="size-6 text-emerald-700" aria-hidden="true" />
           SafeDesk
         </Link>
-        {!rotations && (
+        {!rotations && !otherChains && (
           <label className="network-filter text-xs" htmlFor="workspace-network">
             Network
             <Select
@@ -48,7 +49,7 @@ export function Header() {
           </label>
         )}
         <NetworkLogDrawer />
-        {!rotations && <ConnectMenu />}
+        {!rotations && !otherChains && <ConnectMenu />}
         <Button variant="ghost" size="icon" asChild aria-label="Settings">
           <Link href="/settings">
             <Settings />
@@ -63,7 +64,7 @@ export function Header() {
       </div>
       <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-2 px-4">
         <nav className="desk-tabs" aria-label="SafeDesk workspace">
-          <Link href="/" aria-current={rotations ? undefined : 'page'}>
+          <Link href="/" aria-current={rotations || otherChains ? undefined : 'page'}>
             <ShieldCheck aria-hidden="true" />
             My Safe's
           </Link>
@@ -71,13 +72,19 @@ export function Header() {
             <Users aria-hidden="true" />
             Safe Ownership Management
           </Link>
+          <Link href="/other-chains" aria-current={otherChains ? 'page' : undefined}>
+            <Layers3 aria-hidden="true" />
+            Other Chains
+          </Link>
         </nav>
         <span className="pb-2 text-xs text-amber-700 dark:text-amber-400">
-          {rotations
-            ? 'Approval controls active'
-            : walletActionsEnabled()
-              ? 'Wallet actions enabled'
-              : 'Read-only'}
+          {otherChains
+            ? 'Build and simulate only'
+            : rotations
+              ? 'Approval controls active'
+              : walletActionsEnabled()
+                ? 'Wallet actions enabled'
+                : 'Read-only'}
         </span>
       </div>
     </header>

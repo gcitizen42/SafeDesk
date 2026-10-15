@@ -1,7 +1,7 @@
 # SafeDesk Operator Guide
 
-This guide describes **Rotations & Simulations**, the second SafeDesk tab.
-`npm start` serves it inside **Safe Management** at the same localhost address
+This guide describes **Safe Ownership Management**, the second SafeDesk tab.
+`npm start` serves it alongside **My Safe's** at the same localhost address
 after `npm run install:desk`. The original standalone server
 remains available via `npm run start:rotations` or `npm run batch -- serve`.
 See [the management guide](../../apps/plainsafe/SAFEDESK.md) for its read-only
@@ -35,11 +35,21 @@ This uses `operations/batch` when the existing local October batch is absent. **
 
 ## Setup Wizard
 
+The Safe viewed in **My Safe's**, including its queue, becomes the selected Safe in ownership management. **Manage owners** opens that workspace directly. The top selector combines My Safes, recent Safes and prepared operations, keyed by both chain and address. Unsupported ownership networks remain visible but cannot prepare a rotation.
+
+**Prepare rotation** starts a fresh wizard for the selected Safe, with its network/address prefilled and a unique operation name. **Add Safe** starts with a blank address. Every Safe must load its own current state and review its own complete final owner list and threshold; a previous Safe's draft, signature prompt or proposal review is never carried over. Completed preparations and collected signatures are preserved in their individual operation folders. Adding a Safe to My Safes requires the management app's separate authenticity check and a configured network; an owner-method response alone is not proof of a genuine Safe.
+
 1. Choose one of the six supported networks. RPC choices are fetched server-side from `https://chainlist.org/rpcs.json`, cached for an hour, with known public fallbacks. The default is a known public endpoint; the catalogue is not a guarantee of provider reliability. Chain identity is checked before proceeding. Custom RPCs must be public HTTPS endpoints, with no URL login, local/private network address or unresolved placeholders.
 2. Give the operation a unique lowercase name and load the Safe address. Owners, threshold and nonce are read at a single block. Wrong-chain RPCs, undeployed accounts and invalid Safe state are rejected.
 3. Enter the **entire desired final owner list**, not just incoming owners. Threshold starts at the Safe's current value and must be between one and the final owner count. Removing owners does not authorize an unapproved threshold choice.
 4. Optionally enable Tenderly and enter the account slug, project slug and access key. A blank key preserves an existing configuration. This step creates no virtual environment. With Tenderly disabled, you can still attach trusted external matching simulation evidence.
-5. Review both owner lists and the threshold, then prepare. SafeDesk uses Safe Owner Manager against a pinned verified snapshot, independently validates its owner-list predecessors and final state, builds the complete SafeTx and compares its hash with the Safe contract. It rechecks live state and the service queue before saving. No-op changes, occupied nonces and duplicate preparations are blocked.
+5. Review both owner lists and the threshold, then prepare. SafeDesk uses Safe Owner Manager against a pinned state snapshot, independently validates its owner-list predecessors and final state, builds the complete SafeTx and compares its hash with the Safe contract. It rechecks live state and the service queue before saving. No-op changes and unreviewed competing nonces are blocked. An already published exact payload is linked locally rather than posted again; old signatures or simulations are never transferred to a changed payload.
+
+### Intentional Same-Nonce Replacements
+
+Load the Safe to see the verified current-nonce queue and local preparations. Review every listed hash and explicitly acknowledge preparing an alternative. That acknowledgement is bound to the complete hash set, not a blanket conflict override. A new/unexpected alternative or changed Safe state blocks preparation, signing and proposal review until reloaded and reviewed again.
+
+The replacement preserves the old operation files and queue entries. Its new calldata produces a new SafeTxHash, requiring new signatures and matching simulation evidence. A matching queued payload can be recognised without needing another proposal. Approved alternatives remain visible; SafeDesk does not cancel them or enable execution while conflicts exist. Publishing a same-nonce replacement does not revoke the old signatures, and either transaction can consume the nonce if executed first. Coordinate signers and update the transaction tracker accordingly.
 
 Prepared files are saved under `<batch>/<operation>/`: `rotation.json`, `operation.json`, `current-owners.json`, `owners-after.json`, `decoded-inner-transactions.json` and `signing-data.json`. Preparation does not sign, propose or execute. A matching successful simulation is required to collect signatures.
 
@@ -53,13 +63,13 @@ Safe Owner Manager 1.0.4 omits a threshold-only change when the owner set is unc
 
 Published EOA signatures are cryptographically recovered against the full payload. Preapproved-hash signatures are counted only when the current Safe's onchain approval exists. Contract-owner/EIP-1271 or unverified service confirmations are shown as unverified and excluded. Unknown/unavailable service data is never presented as ready. After a live check, the displayed current owner list and threshold use the current chain state.
 
-Signing readiness requires an existing owner, correct wallet network, unchanged payload/state, no conflicting nonce, no draft, and matching successful simulation. With enough usable signatures and a connected wallet, SafeDesk also attempts an `eth_call` of the exact execution and estimates gas at the inspected block, comparing estimated native cost to the wallet balance with 20% headroom. Any account can potentially submit a valid fully approved Safe execution; being an owner is not itself an execution requirement.
+Signing readiness requires an existing owner, correct wallet network, unchanged payload/state, no unreviewed conflicting nonce, no draft, and matching successful simulation. Execution readiness requires no competing transaction at all. With enough usable signatures and a connected wallet, SafeDesk also attempts an `eth_call` of the exact execution and estimates gas at the inspected block, comparing estimated native cost to the wallet balance with 20% headroom. Any account can potentially submit a valid fully approved Safe execution; being an owner is not itself an execution requirement.
 
 This is a **read-only readiness check**, not an execution guarantee or cost quote. State/gas prices can change, guards can reject, and L2 data fees may not be fully reflected in the RPC estimate. Execution remains a separate wallet-confirmed action through **Open in Safe**. Publish local-only approvals first when using Safe's UI. No automatic polling or blockchain broadcast occurs.
 
 ## Browser Workflow
 
-1. Select a Safe in the left list. Check its chain, address, nonce, complete payload, current/proposed owners and approval threshold.
+1. Open a Safe in My Safe's or select it at the top of ownership management. Check its chain/address and live policy/nonce; the left list contains that Safe's preparations. Prepare a new rotation or select an existing one, then review its complete payload and target policy.
 2. Use **Refresh transaction**. Review nonce, approvals, conflicts and wallet readiness.
 3. Use **Simulate on Tenderly** to review and confirm a new isolated environment. It assumes owner approvals, executes the exact SafeTx on the fork, checks the success event/final state, and automatically attaches the result and dashboard link. Alternatively, **Attach result** accepts existing evidence. The earlier BOB local-fork reports are not Tenderly vnets.
 4. Connect your existing owner account. **Sign and collect** requests EIP-712 signing and switches the wallet to the selected chain. Validate the request yourself on the Ledger. **Ledger hash signing** is the personal_sign fallback for the exact SafeTx hash; it provides less hardware-readable context.
@@ -133,6 +143,8 @@ Rotation input shape (addresses below are examples, not actual deployment instru
 
 Optional `rpcUrl` overrides the chain's configured/default RPC. Optional `tenderly` object accepts `enabled`, `account`, `project`, `key`. The same RPC/Tenderly fields can be supplied to `configure`. Keep credential-bearing input files under `<batch>/secrets/`, with mode 0600, or another ignored private location, not in command arguments or source-controlled examples. Each command accepts `--root /absolute/batch/path`. CLI Ledger signatures still come from the browser or an external signer.
 
+For an intentional replacement, inspect first and add `replacement: {"acknowledgedHashes": ["0xFULL_REVIEWED_HASH", "0xOTHER_REVIEWED_HASH"], "confirm": "REPLACE"}` to the private input file, using all distinct current-nonce hashes shown by `inspect` across `queuedTransactions` and `localOperations`. These are placeholders, not valid transaction hashes. The backend rejects missing, extra, stale or unexpected alternatives. `prepare` still requires its separate PREPARE confirmation; `propose` still requires PROPOSE. Neither acknowledgement executes a transaction.
+
 ## Built-in Tenderly Simulation
 
 Credentials stay server-side. The wizard/settings write custom RPCs and Tenderly credentials to `<batch>/secrets/safedesk.env`, mode 0600; non-secret enable/disable preference is `<batch>/secrets/settings.json`. These are ignored, plaintext private files, not encryption. Browser fields are cleared when setup finishes or is cancelled; keys and saved private RPCs are not returned in API responses.
@@ -181,7 +193,7 @@ Existing local reports, or your own trusted simulation runner, can instead suppl
 
 ## Safeguards and Recovery
 
-- Changed nonce, owner set, threshold, chain/hash, conflicting queue entry, non-owner signature, unsigned operation, draft or missing successful simulation blocks the relevant action.
+- Changed nonce, owner set, threshold, chain/hash, unreviewed conflicting queue entry, non-owner signature, unsigned operation, draft or missing successful simulation blocks the relevant action. Reviewed replacements may be signed/proposed, never automatically executed.
 - Only 65-byte EOA signatures are supported. Contract-owner/EIP-1271 signatures and service delegates require a separate workflow.
 - Local state is `<batch>/secrets/batch-state.json`, with directory permission 0700 and file permission 0600. This is plaintext with private filesystem permissions, **not encryption**. No private keys are stored.
 - The HTTP server does not expose secret files or directory listings. It rejects foreign Host/Origin headers and requires a session token for changes and signature exports. Do not reverse-proxy it to the internet.
@@ -189,7 +201,7 @@ Existing local reports, or your own trusted simulation runner, can instead suppl
 - Publication checks current state again, reuses an existing matching proposal and adds missing confirmations. On an ambiguous network failure it records `needs-check` and stops the batch. Inspect Safe before retrying; accepted submissions cannot be rolled back by this tool.
 - Browser exports contain real signatures. Move them to a private location, keep them out of Git/cloud sharing, and do not post them in chat. CLI export uses permission 0600 and refuses to overwrite an existing file.
 
-The current three BOB operations are eligible for Citizen42 signing after fresh checks. Optimism and Arbitrum remain drafts pending the threshold decision; Citizen42 is not yet a current owner there. Incoming-owner signatures cannot approve their own addition.
+Always use fresh readiness checks rather than assuming an older local preparation remains eligible. Incoming-owner signatures cannot approve their own addition. A rotation that raises the threshold is authorised under the current policy; the new threshold applies after successful execution.
 
 ## Verification
 

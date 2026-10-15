@@ -14,7 +14,7 @@ export function createBatchHandler(root,{store=new BatchStore(root),port=8770,ma
  const token=randomBytes(32).toString('hex'),reviews=new Map(),simulationPlans=new Map();let busy=false;
  const origins=new Set([`http://127.0.0.1:${port}`,`http://localhost:${port}`]);
  if(!['','/api/rotations'].includes(prefix))throw Error('Invalid batch route prefix');
- const publicFiles={'/':'dashboard.html','/dashboard.html':'dashboard.html','/dashboard.mjs':'dashboard.mjs','/dashboard-standalone.mjs':'dashboard-standalone.mjs','/dashboard.css':'dashboard.css'};
+ const publicFiles={'/':'dashboard.html','/dashboard.html':'dashboard.html','/dashboard.mjs':'dashboard.mjs','/dashboard-standalone.mjs':'dashboard-standalone.mjs','/workspace.mjs':'workspace.mjs','/dashboard.css':'dashboard.css'};
  const send=(res,status,obj)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(obj));};
  return async(req,res)=>{
   if(!origins.has(`http://${req.headers.host}`))return send(res,403,{error:'Unexpected host'});
@@ -47,7 +47,7 @@ export function createBatchHandler(root,{store=new BatchStore(root),port=8770,ma
      let result=await store.withLock(async()=>{
      let result;
      switch(url.pathname){
-      case '/api/check':result=await store.check(input.id);break;
+      case '/api/check':result=await store.check(input.id,{ready:input.ready===true});break;
       case '/api/settings':result=await workflow.configure(input);break;
       case '/api/rpc-check':{const c=await workflow.context(input.chainId,input.rpcUrl);result={chainId:c.chainId,verified:true};break;}
       case '/api/inspect':result=await workflow.inspect(input);break;
@@ -60,7 +60,7 @@ export function createBatchHandler(root,{store=new BatchStore(root),port=8770,ma
       case '/api/tenderly-plan':{const plan=await runner.plan(input.id,{publicExplorer:input.publicExplorer===true}),simulationToken=randomBytes(24).toString('hex');simulationPlans.set(simulationToken,{plan,expires:Date.now()+10*60*1000});result={plan,simulationToken};break;}
       case '/api/tenderly-run':{const prepared=simulationPlans.get(input.simulationToken);if(!prepared||prepared.expires<Date.now()||input.confirm!=='SIMULATE')throw Error('Review and confirm one Tenderly simulation first');simulationPlans.delete(input.simulationToken);result=await runner.run(prepared.plan,{confirm:input.confirm});break;}
       case '/api/review':{const items=await store.review(input.ids),reviewToken=randomBytes(24).toString('hex');reviews.set(reviewToken,{items,ids:input.ids,expires:Date.now()+10*60*1000});result={items,reviewToken};break;}
-      case '/api/propose':{const review=reviews.get(input.reviewToken);if(!review||review.expires<Date.now()||input.confirm!=='PROPOSE')throw Error('Review the selected proposals first');const now=await store.review(review.ids);if(JSON.stringify(now)!==JSON.stringify(review.items))throw Error('Review changed; review again');reviews.delete(input.reviewToken);result=await store.propose(review.ids);break;}
+      case '/api/propose':{const review=reviews.get(input.reviewToken);if(!review||review.expires<Date.now()||input.confirm!=='PROPOSE')throw Error('Review the selected proposals first');const now=await store.review(review.ids);if(JSON.stringify(now)!==JSON.stringify(review.items))throw Error('Review changed; review again');reviews.delete(input.reviewToken);result=await store.propose(review.ids,{confirm:input.confirm,reviewed:review.items});break;}
       default:throw Error('Unknown action');
      }
      return result;

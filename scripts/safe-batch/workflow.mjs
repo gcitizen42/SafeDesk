@@ -7,6 +7,7 @@ import {buildSafeTx} from '../prepare-safe-service-proposal.mjs';
 import {CHAINS, SAFE_ABI, normalizeSigning, recoverSignature, safeId} from './core.mjs';
 import {rpcFor, validateRpcUrl, saveSettings} from './settings.mjs';
 import {PublicChainCatalog} from '../safedesk/chain-catalog.mjs';
+import {verifiedQueue, verifyServiceTransaction, queueSummary, localOperations, competingHashes, replacementApproval, classifyConflicts, equalHashes, canonicalHashes, sameOwnerOrder} from './replacement.mjs';
 
 const OWNER_ABI = new ethers.Interface([
   'function swapOwner(address prevOwner,address oldOwner,address newOwner)',
@@ -65,50 +66,68 @@ export class SafeWorkflow {
     const owners = [...await call('getOwners')].map(x => ethers.getAddress(x));
     const threshold = Number(await call('getThreshold')), nonce = String(await call('nonce'));
     if (!owners.length || threshold < 1 || threshold > owners.length || !Number.isSafeInteger(Number(nonce))) throw Error('Invalid or unsupported Safe state');
-    return {safe, chainId: context.chainId, owners, threshold, nonce, block: Number(BigInt(block)), checkedAt: new Date().toISOString()};
+    let queuedTransactions=[],queueKnown=false,queueError=null;
+    try { queuedTransactions=(await this.queue(context,safe,nonce)).map(queueSummary);queueKnown=true; }
+    catch { queueError='Safe queue could not be fully verified; pending transactions are unknown'; }
+    return {safe, chainId: context.chainId, owners, threshold, nonce, block: Number(BigInt(block)), checkedAt: new Date().toISOString(),
+      queueKnown,queueError,queuedTransactions,localOperations:localOperations(this.store,context.chainId,safe,nonce)};
   }
   async queue(context, safe, nonce) {
-    let url = `${context.service}/api/v1/safes/${safe}/multisig-transactions/?executed=false&nonce=${nonce}&limit=100`, pages = 0;
-    const transactions = [];
-    while (url) {
-      if (new URL(url).origin !== new URL(context.service).origin) throw Error('Unexpected queue pagination origin');
-      const response = await this.store.json(url);
-      if (!Array.isArray(response.results)) throw Error('Safe queue response is unreadable');
-      transactions.push(...response.results.filter(x => String(x.nonce) === String(nonce)));
-      if (++pages > 10) throw Error('Safe queue too large to verify');
-      url = response.next;
-    }
-    return transactions;
+    return verifiedQueue(this.store,context,safe,nonce,normalizeSigning);
   }
   async prepare(input) {
     const id = safeId(input.id);
-    if (this.store.ids().includes(id) || fs.existsSync(path.join(this.store.root, id))) throw Error('Operation name already exists');
     const before = await this.inspect(input);
     if (!input.snapshot || input.snapshot.safe?.toLowerCase() !== before.safe.toLowerCase() ||
         Number(input.snapshot.chainId) !== before.chainId || input.snapshot.nonce !== before.nonce ||
-        input.snapshot.threshold !== before.threshold || !sameSet(input.snapshot.owners || [], before.owners)) throw Error('Safe state changed or was not reviewed; load the Safe again');
+        input.snapshot.threshold !== before.threshold || !sameOwnerOrder(input.snapshot.owners, before.owners)) throw Error('Safe state changed or was not reviewed; load the Safe again');
+    if (!before.queueKnown || input.snapshot.queueKnown !== true) throw Error('Safe queue is unknown or already queued data could not be verified; load the Safe again');
+    const reviewState = snapshot => JSON.stringify({queue:snapshot.queuedTransactions.map(tx=>tx.hash).sort(),local:snapshot.localOperations});
+    if (!Array.isArray(input.snapshot.queuedTransactions) || !Array.isArray(input.snapshot.localOperations) || reviewState(input.snapshot) !== reviewState(before)) throw Error('Queue or local preparation review changed; load the Safe again');
     const owners = desiredOwners(input.newOwners, before.safe), threshold = desiredThreshold(input.threshold, owners.length);
     if (sameSet(before.owners, owners) && before.threshold === threshold) throw Error('No owner or threshold changes requested');
     const context = await this.context(input.chainId, input.rpcUrl);
-    if ((await this.queue(context, before.safe, before.nonce)).length) throw Error('A transaction is already queued at the current nonce; review it in Safe first');
-    for (const old of this.store.list()) if (old.chainId === before.chainId && old.safe.toLowerCase() === before.safe.toLowerCase() && String(old.nonce) === before.nonce) throw Error('This Safe and nonce are already prepared');
     const builder = await generateFromSnapshot(before, owners, threshold);
     verifyOwnerChanges(builder, before, owners, threshold);
     const tx = buildSafeTx(builder, before.nonce);
     const signing = normalizeSigning({domain: {chainId: before.chainId, verifyingContract: before.safe}, message: tx});
+    const competing=competingHashes(before.queuedTransactions,before.localOperations,signing.safeTxHash);
+    const candidatePresent=[...before.queuedTransactions,...before.localOperations].some(x=>x.hash.toLowerCase() === signing.safeTxHash.toLowerCase());
+    const replaces=replacementApproval(input.replacement,competing,signing.safeTxHash,candidatePresent);
     const block = ethers.toQuantity(before.block), m = signing.message;
     const hash = SAFE_ABI.decodeFunctionResult('getTransactionHash', await this.store.rpc(context, 'eth_call', [{to: before.safe,
       data: SAFE_ABI.encodeFunctionData('getTransactionHash', [m.to,m.value,m.data,m.operation,m.safeTxGas,m.baseGas,m.gasPrice,m.gasToken,m.refundReceiver,m.nonce])}, block]))[0];
     if (hash.toLowerCase() !== signing.safeTxHash.toLowerCase()) throw Error('Safe onchain hash differs from the prepared EIP-712 hash');
     // Recheck after generation, before persisting a signable payload.
     const fresh = await this.inspect(input);
-    if (fresh.nonce !== before.nonce || fresh.threshold !== before.threshold || !sameSet(fresh.owners, before.owners)) throw Error('Safe state changed during preparation; load it again');
-    if ((await this.queue(context, before.safe, before.nonce)).length) throw Error('A transaction was queued during preparation; review it first');
+    if (fresh.nonce !== before.nonce || fresh.threshold !== before.threshold || !sameOwnerOrder(fresh.owners, before.owners)) throw Error('Safe state changed during preparation; load it again');
+    if (!fresh.queueKnown || reviewState(fresh) !== reviewState(before)) throw Error('Queue or local preparations changed during preparation; review again');
+    const alreadyProposed=fresh.queuedTransactions.some(x=>x.hash === signing.safeTxHash.toLowerCase());
+    const existing=fresh.localOperations.filter(x=>x.hash === signing.safeTxHash.toLowerCase());
+    const matching=existing.map(x=>this.store.operation(x.id)).find(old=>{
+      try {
+        return !old.draft && !old.imported && old.generator === 'safe-owner-manager@1.0.4' && old.threshold === threshold &&
+          Array.isArray(old.newOwners) && sameSet(old.newOwners,owners) && old.before.chainId === before.chainId &&
+          old.before.safe?.toLowerCase() === before.safe.toLowerCase() && String(old.before.nonce) === before.nonce &&
+          old.before.threshold === before.threshold && sameOwnerOrder(old.before.owners,before.owners) &&
+          JSON.stringify(old.signing) === JSON.stringify(signing) && equalHashes(canonicalHashes(old.replaces || []),replaces);
+      } catch { return false; }
+    });
+    const occupied=this.store.ids().includes(id) || fs.existsSync(path.join(this.store.root,id));
+    if (occupied && matching?.id !== id) throw Error('Operation name already exists');
+    if (matching) {
+      const old=matching;
+      if (alreadyProposed) {
+        this.store.state.results[old.id]={status:'proposed',safeTxHash:signing.safeTxHash,verified:true,adopted:true,at:new Date().toISOString()};
+        this.store.save();
+      }
+      return {id:old.id,hash:signing.safeTxHash,nonce:before.nonce,threshold,owners,alreadyProposed,replaces};
+    }
     await this.configure({chainId: before.chainId, rpcUrl: input.rpcUrl, tenderly: input.tenderly});
     this.store.init();
     const dir = path.join(this.store.root, id);
     const operation = {id, chainId: before.chainId, safe: before.safe, nonce: Number(before.nonce), safeTxHash: signing.safeTxHash,
-      newOwners: owners, threshold, draft: false, generator: 'safe-owner-manager@1.0.4'};
+      newOwners: owners, threshold, draft: false, generator: 'safe-owner-manager@1.0.4',replaces};
     fs.mkdirSync(dir);
     const files = {'operation.json': operation, 'current-owners.json': before, 'signing-data.json': signing, 'rotation.json': builder,
       'owners-after.json': {owners, threshold}, 'decoded-inner-transactions.json': tx.innerTransactions};
@@ -116,14 +135,18 @@ export class SafeWorkflow {
     const file = path.join(this.store.root, 'batch.json'), batch = JSON.parse(fs.readFileSync(file, 'utf8'));
     batch.operations.push(operation);
     fs.writeFileSync(file, JSON.stringify(batch, null, 2));
-    return {id, hash: signing.safeTxHash, nonce: before.nonce, threshold, owners};
+    if (alreadyProposed) {
+      this.store.state.results[id]={status:'proposed',safeTxHash:signing.safeTxHash,verified:true,adopted:true,at:new Date().toISOString()};
+      this.store.save();
+    }
+    return {id, hash: signing.safeTxHash, nonce: before.nonce, threshold, owners,alreadyProposed,replaces};
   }
   async transactionStatus(id, {account, walletChainId} = {}) {
     this.store.refresh();
     const op = this.store.operation(id), live = await this.inspect({chainId: op.chainId, safe: op.safe});
     const context = {chainId: op.chainId, rpc: op.rpc, service: op.service};
     account = account ? ethers.getAddress(account) : null;
-    const unchanged = live.nonce === op.signing.message.nonce && live.threshold === op.before.threshold && sameSet(live.owners, op.before.owners);
+    const unchanged = live.nonce === op.signing.message.nonce && live.threshold === op.before.threshold && sameOwnerOrder(live.owners, op.before.owners);
     const onchainHash = SAFE_ABI.decodeFunctionResult('getTransactionHash', await this.store.rpc(context, 'eth_call', [{to: op.safe,
       data: SAFE_ABI.encodeFunctionData('getTransactionHash', Object.values(op.signing.message))}, ethers.toQuantity(live.block)]))[0];
     const hashMatches = onchainHash.toLowerCase() === op.safeTxHash.toLowerCase();
@@ -131,9 +154,7 @@ export class SafeWorkflow {
     try {
       const response = await this.store.fetcher(`${op.service}/api/v1/multisig-transactions/${op.safeTxHash}/`, {redirect: 'error', signal: AbortSignal.timeout(25000)});
       if (response.ok) {
-        transaction = await response.json();
-        const signed = normalizeSigning({domain: op.signing.domain, message: {...transaction, data: transaction.data || '0x'}, safeTxHash: transaction.safeTxHash});
-        if (signed.safeTxHash !== op.safeTxHash || String(transaction.safe).toLowerCase() !== op.safe.toLowerCase()) throw Error('Service transaction does not match this payload');
+        transaction = verifyServiceTransaction(await response.json(),{chainId:op.chainId,safe:op.safe,nonce:op.signing.message.nonce,hash:op.safeTxHash,allowExecuted:true},normalizeSigning);
       } else if (response.status !== 404) throw Error('Safe service unavailable');
       queued = await this.queue(context, op.safe, live.nonce);
       serviceKnown = true;
@@ -159,15 +180,17 @@ export class SafeWorkflow {
       try { if (ownerSet.has(c.sender.toLowerCase())) collected.set(c.sender.toLowerCase(), recoverSignature(op.signing, c.sender, c.signature)); } catch { /* Stale/invalid local signatures are not counted. */ }
     }
     const combined = new Map([...published, ...collected]);
-    const conflicts = serviceKnown ? queued.filter(t => t.safeTxHash?.toLowerCase() !== op.safeTxHash.toLowerCase()).map(t => ({hash:t.safeTxHash,nonce:t.nonce,to:t.to,confirmations:t.confirmations?.length || 0})) : [];
+    const conflictState=classifyConflicts(op,serviceKnown ? queued : [],localOperations(this.store,op.chainId,op.safe,live.nonce));
+    const {conflicts,reviewedConflicts,unreviewedConflicts,replaces,replacementReviewStale}=conflictState;
     const currentOwner = !!account && ownerSet.has(account.toLowerCase());
     const walletNetworkMatches = !!account && Number(walletChainId) === op.chainId;
-    const eligible = unchanged && hashMatches && serviceKnown && !conflicts.length && !transaction?.isExecuted && !op.draft && !!op.simulation?.matched;
+    const eligible = unchanged && hashMatches && serviceKnown && !replacementReviewStale && !transaction?.isExecuted && !op.draft && !!op.simulation?.matched;
     const canSign = eligible && currentOwner && walletNetworkMatches;
     const execution = {canExecute:false, status:'Waiting for signatures', checked:false, gasUnits:null, estimatedNativeCost:null, walletBalance:null};
     if (transaction?.isExecuted) execution.status = transaction.isSuccessful === false ? 'Executed with failure' : 'Already executed';
     else if (!unchanged || !hashMatches) execution.status = 'Safe state changed; rebuild required';
     else if (!serviceKnown) execution.status = 'Safe service unavailable';
+    else if (replaces.length) execution.status = replacementReviewStale ? 'Replacement review changed; prepare a new revision' : 'Replacement execution requires separate coordination';
     else if (conflicts.length) execution.status = 'Conflicting transaction at the current nonce';
     else if (op.draft || !op.simulation?.matched) execution.status = op.draft ? 'Draft decision outstanding' : 'Successful simulation required';
     else if (combined.size >= live.threshold) {
@@ -195,9 +218,9 @@ export class SafeWorkflow {
       owners:live.owners,unchanged,hashMatches,serviceKnown,serviceError,proposed:!!transaction,executed:!!transaction?.isExecuted,
       transactionId:transaction?.transactionHash || null,publishedApprovals:published.size,unverifiableApprovals:unverifiable,
       publishedOwners:[...published.values()].map(x=>x.sender),localSignatures:collected.size,usableSignatures:combined.size,
-      currentQueue:queued.map(t=>({hash:t.safeTxHash,nonce:t.nonce,to:t.to,confirmations:t.confirmations?.length||0})),conflicts,
+      currentQueue:serviceKnown ? queued.map(queueSummary) : [],conflicts,reviewedConflicts,unreviewedConflicts,replaces,replacementReviewStale,
       wallet:{account,currentOwner,networkMatches:walletNetworkMatches,canSign,alreadyPublished:!!account && published.has(account.toLowerCase())},
-      execution,safeUrl:`https://app.safe.global/transactions/queue?safe=${CHAINS[op.chainId].short}:${op.safe}`};
+      execution,safeUrl:`${Number(op.chainId)===60808?'https://safe.gobob.xyz':'https://app.safe.global'}/transactions/queue?safe=${CHAINS[op.chainId].short}:${op.safe}`};
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "safedesk",
-  "version": "0.4.1",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "SafeDesk: multichain Safe owner rotations, Ledger signature collection, proposal tracking and guarded Tenderly simulations.",
@@ -18,6 +18,7 @@
     "audit:manager": "npm exec --yes --package=bun@1.4.3 -- bun audit --cwd apps/plainsafe",
     "test:local": "node --test scripts/safedesk/*.test.mjs",
     "check:public": "node scripts/safedesk/check-public-source.mjs",
+    "other-chains": "node scripts/other-chains/cli.mjs",
     "balances": "node scripts/audit-safe-balances.mjs",
     "discover": "node scripts/discover-safes.mjs",
     "generate": "node scripts/generate-rotation-json.mjs",
@@ -27,6 +28,7 @@
     "remaining": "node scripts/remaining-rotations.mjs"
   },
   "dependencies": {
+    "@mysten/sui": "2.35.0",
     "ethers": "^6.13.4",
     "lucide": "^1.54.0",
     "safe-owner-manager": "^1.0.4"

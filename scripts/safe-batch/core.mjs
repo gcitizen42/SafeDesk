@@ -3,13 +3,14 @@ import path from 'node:path';
 import {ethers} from 'ethers';
 import {safeTxTypes} from '../prepare-safe-service-proposal.mjs';
 import {rpcFor} from './settings.mjs';
+import {verifiedQueue,verifyServiceTransaction,localOperations,classifyConflicts,equalHashes,canonicalHashes,sameOwnerOrder} from './replacement.mjs';
 
 export const CHAINS={
- 1:{name:'Ethereum',short:'eth',rpc:'https://ethereum.publicnode.com',service:'https://safe-transaction-mainnet.safe.global',explorer:'https://etherscan.io'},
- 10:{name:'Optimism',short:'oeth',rpc:'https://mainnet.optimism.io',service:'https://safe-transaction-optimism.safe.global',explorer:'https://optimistic.etherscan.io'},
- 137:{name:'Polygon',short:'matic',rpc:'https://polygon-bor-rpc.publicnode.com',service:'https://safe-transaction-polygon.safe.global',explorer:'https://polygonscan.com'},
- 42161:{name:'Arbitrum',short:'arb1',rpc:'https://arb1.arbitrum.io/rpc',service:'https://safe-transaction-arbitrum.safe.global',explorer:'https://arbiscan.io'},
- 8453:{name:'Base',short:'base',rpc:'https://base-rpc.publicnode.com',service:'https://safe-transaction-base.safe.global',explorer:'https://basescan.org'},
+ 1:{name:'Ethereum',short:'eth',rpc:'https://ethereum.publicnode.com',service:'https://api.safe.global/tx-service/eth',explorer:'https://etherscan.io'},
+ 10:{name:'Optimism',short:'oeth',rpc:'https://mainnet.optimism.io',service:'https://api.safe.global/tx-service/oeth',explorer:'https://optimistic.etherscan.io'},
+ 137:{name:'Polygon',short:'matic',rpc:'https://polygon-bor-rpc.publicnode.com',service:'https://api.safe.global/tx-service/matic',explorer:'https://polygonscan.com'},
+ 42161:{name:'Arbitrum',short:'arb1',rpc:'https://arb1.arbitrum.io/rpc',service:'https://api.safe.global/tx-service/arb1',explorer:'https://arbiscan.io'},
+ 8453:{name:'Base',short:'base',rpc:'https://base-rpc.publicnode.com',service:'https://api.safe.global/tx-service/base',explorer:'https://basescan.org'},
  60808:{name:'BOB',short:'bob',rpc:'https://rpc.gobob.xyz',service:'https://transaction.safe.gobob.xyz',explorer:'https://explorer.gobob.xyz'}
 };
 export const SAFE_ABI=new ethers.Interface([
@@ -22,7 +23,6 @@ const FIELDS=['to','value','data','operation','safeTxGas','baseGas','gasPrice','
 export const safeId=id=>{if(!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id))throw Error('Invalid operation name');return id;};
 const read=file=>JSON.parse(fs.readFileSync(file,'utf8'));
 const optional=file=>fs.existsSync(file)?read(file):null;
-const eqSet=(a,b)=>a.map(x=>x.toLowerCase()).sort().join()===b.map(x=>x.toLowerCase()).sort().join();
 export function normalizeSigning(input){
  const domain={chainId:Number(input.domain?.chainId),verifyingContract:ethers.getAddress(input.domain?.verifyingContract)};
  if(!CHAINS[domain.chainId])throw Error('Unsupported chain');
@@ -92,7 +92,7 @@ export class BatchStore{
   return{...op,id,name:CHAINS[op.chainId].name,signing,before,simulation,simulationUrl:attached?.url||'',rpc:rpcFor(this.root,op.chainId,CHAINS[op.chainId].rpc),service:CHAINS[op.chainId].service};
  }
  signatures(op){return this.state.signatures.filter(s=>s.id===op.id&&s.safeTxHash===op.safeTxHash);}
- list(){this.refresh();return this.ids().map(id=>{const op=this.operation(id),sigs=this.signatures(op);return{id,chainId:op.chainId,chain:op.name,safe:op.safe,nonce:op.signing.message.nonce,hash:op.safeTxHash,draft:!!op.draft,currentThreshold:op.before.threshold,proposedThreshold:op.threshold,newOwners:op.newOwners,owners:op.before.owners,signing:op.signing,simulation:op.simulation,simulationUrl:op.simulationUrl,tenderlyJob:this.state.tenderlyJobs?.[id]||null,signatures:sigs.map(s=>({sender:s.sender,mode:s.mode})),result:this.state.results[id]||null};});}
+ list(){this.refresh();return this.ids().map(id=>{const op=this.operation(id),sigs=this.signatures(op);return{id,chainId:op.chainId,chain:op.name,safe:op.safe,nonce:op.signing.message.nonce,hash:op.safeTxHash,replaces:canonicalHashes(op.replaces||[]),draft:!!op.draft,currentThreshold:op.before.threshold,proposedThreshold:op.threshold,newOwners:op.newOwners,owners:op.before.owners,signing:op.signing,simulation:op.simulation,simulationUrl:op.simulationUrl,tenderlyJob:this.state.tenderlyJobs?.[id]||null,signatures:sigs.map(s=>({sender:s.sender,mode:s.mode})),result:this.state.results[id]||null};});}
  async json(url,options={}){let r;try{r=await this.fetcher(url,{...options,redirect:'error',signal:AbortSignal.timeout(25000)});}catch{throw Error('Service request failed or timed out');}if(!r.ok)throw Error(`Service request failed (${r.status})`);try{return await r.json();}catch{throw Error('Service returned an unreadable response');}}
  async rpc(op,method,params=[]){const j=await this.json(op.rpc,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});if(j.error||j.result===undefined)throw Error(`RPC ${method} rejected the request or returned no result`);return j.result;}
  async check(id,{ready=false}={}){
@@ -100,12 +100,14 @@ export class BatchStore{
   if(Number(BigInt(await this.rpc(op,'eth_chainId')))!==op.chainId)throw Error('RPC chain differs');
   const block=await this.rpc(op,'eth_blockNumber');const call=async(name,args=[])=>SAFE_ABI.decodeFunctionResult(name,await this.rpc(op,'eth_call',[{to:op.safe,data:SAFE_ABI.encodeFunctionData(name,args)},block]))[0];
   const owners=[...await call('getOwners')],threshold=Number(await call('getThreshold')),nonce=String(await call('nonce'));
-  if(!eqSet(owners,op.before.owners)||threshold!==op.before.threshold||nonce!==String(m.nonce))throw Error('Safe owners, threshold or nonce changed; rebuild the payload and collect new signatures');
+  if(!sameOwnerOrder(owners,op.before.owners)||threshold!==op.before.threshold||nonce!==String(m.nonce))throw Error('Safe owner order, threshold or nonce changed; rebuild the payload and collect new signatures');
   const chainHash=await call('getTransactionHash',[m.to,m.value,m.data,m.operation,m.safeTxGas,m.baseGas,m.gasPrice,m.gasToken,m.refundReceiver,m.nonce]);if(chainHash.toLowerCase()!==op.safeTxHash.toLowerCase())throw Error('Onchain Safe hash differs');
-  let url=`${op.service}/api/v1/safes/${op.safe}/multisig-transactions/?executed=false&nonce=${nonce}&limit=100`,pages=0;
-  while(url){if(new URL(url).origin!==new URL(op.service).origin)throw Error('Unexpected queue pagination origin');const q=await this.json(url);if(q.results?.some(t=>String(t.nonce)===nonce&&t.safeTxHash?.toLowerCase()!==op.safeTxHash.toLowerCase()))throw Error('Another proposed transaction uses this nonce');if(++pages>10)throw Error('Queue too large for this review');url=q.next;}
+  const queue=await verifiedQueue(this,op,op.safe,nonce,normalizeSigning);
+  const conflicts=classifyConflicts(op,queue,localOperations(this,op.chainId,op.safe,nonce));
+  if(conflicts.unreviewedConflicts.length)throw Error('Another proposed or locally prepared transaction uses this nonce without replacement review');
+  if(conflicts.replacementReviewStale)throw Error('Review changed: replacement alternatives differ; reload the Safe and prepare a newly reviewed revision');
   if(ready){if(op.draft)throw Error('Threshold decision outstanding for this draft');if(!op.simulation?.matched)throw Error('Attach a matching successful simulation before signing/proposing');}
-  return{checkedAt:new Date().toISOString(),owners,threshold,nonce,hash:chainHash,block:Number(BigInt(block))};
+  return{checkedAt:new Date().toISOString(),owners,threshold,nonce,hash:chainHash,block:Number(BigInt(block)),...conflicts};
  }
  async collect(id,sender,signature,method){const op=this.operation(id),s=recoverSignature(op.signing,sender,signature);if(method!==undefined&&(!['eip712','eth_sign'].includes(method)||(method==='eip712'?'EIP-712':'Safe personal_sign')!==s.mode))throw Error('Wallet signature does not match the selected signing method');const live=await this.check(id,{ready:true});if(!live.owners.some(o=>o.toLowerCase()===s.sender.toLowerCase()))throw Error('Signer is not a current owner');this.state.signatures=this.state.signatures.filter(x=>!(x.id===id&&x.safeTxHash===op.safeTxHash&&x.sender.toLowerCase()===s.sender.toLowerCase()));this.state.signatures.push({id,chainId:op.chainId,safe:op.safe,safeTxHash:op.safeTxHash,...s,collectedAt:new Date().toISOString()});this.save();return{sender:s.sender,mode:s.mode,hash:op.safeTxHash};}
  attach(id,url,document){const op=this.operation(id);const link=simulationUrl(url);const match=document?simulationMatch(document,op.signing):null;this.state.simulations[id]={url:link,hash:op.safeTxHash,match};this.save();return{url:link,match};}
@@ -125,19 +127,25 @@ export class BatchStore{
   const dir=path.join(this.root,id);fs.mkdirSync(dir);for(const [name,value]of Object.entries({'operation.json':{...publicOp,threshold:null,newOwners:[],draft:false,imported:true},'signing-data.json':s,'current-owners.json':{owners,threshold,nonce:op.nonce,safe:op.safe,chainId:op.chainId}}))fs.writeFileSync(path.join(dir,name),JSON.stringify(value,null,2));
   this.init();const file=path.join(this.root,'batch.json'),batch=read(file);batch.operations.push(publicOp);fs.writeFileSync(file,JSON.stringify(batch,null,2));return{id,hash:s.safeTxHash};
  }
- async review(ids){if(!Array.isArray(ids)||!ids.length||new Set(ids).size!==ids.length)throw Error('Select at least one unique operation');const out=[];for(const id of ids){const op=this.operation(id),live=await this.check(id,{ready:true}),sigs=this.signatures(op);if(!sigs.length)throw Error(`${id}: no collected signatures`);for(const sig of sigs){recoverSignature(op.signing,sig.sender,sig.signature);if(!live.owners.some(x=>x.toLowerCase()===sig.sender.toLowerCase()))throw Error('Collected signer is no longer owner');}out.push({id,safe:op.safe,chain:op.name,hash:op.safeTxHash,nonce:live.nonce,signers:sigs.map(x=>x.sender),signatures:sigs.length,threshold:live.threshold});}return out;}
- async propose(ids){
-  await this.review(ids);const results=[];
+ async review(ids){if(!Array.isArray(ids)||!ids.length||new Set(ids).size!==ids.length)throw Error('Select at least one unique operation');const out=[];for(const id of ids){const op=this.operation(id),live=await this.check(id,{ready:true}),sigs=this.signatures(op);if(!sigs.length)throw Error(`${id}: no collected signatures`);for(const sig of sigs){recoverSignature(op.signing,sig.sender,sig.signature);if(!live.owners.some(x=>x.toLowerCase()===sig.sender.toLowerCase()))throw Error('Collected signer is no longer owner');}out.push({id,safe:op.safe,chain:op.name,hash:op.safeTxHash,nonce:live.nonce,signers:sigs.map(x=>x.sender),signatures:sigs.length,threshold:live.threshold,replaces:live.replaces,competingHashes:live.conflictingHashes});}return out;}
+ async propose(ids,{confirm,reviewed}={}){
+  if(confirm!=='PROPOSE')throw Error('Explicit PROPOSE confirmation required');
+  const current=await this.review(ids);
+  if(reviewed && JSON.stringify(current)!==JSON.stringify(reviewed))throw Error('Review changed; review again');
+  const results=[];
   for(const id of ids){const op=this.operation(id),sigs=this.signatures(op),m=op.signing.message;let result;
    try{
-    await this.check(id,{ready:true});
+    const expected=current.find(item=>item.id===id);
+    const assertReview=async()=>{const live=await this.check(id,{ready:true});if(!equalHashes(live.conflictingHashes,expected.competingHashes)||!equalHashes(live.replaces,expected.replaces))throw Error('Review changed; review again');};
+    await assertReview();
     const url=`${op.service}/api/v1/multisig-transactions/${op.safeTxHash}/`;let existing=null;
-    const found=await this.fetcher(url,{signal:AbortSignal.timeout(25000)});if(found.ok){existing=await found.json();if(existing.isExecuted)throw Error('Transaction already executed');}else if(found.status!==404)throw Error(`Proposal lookup failed (${found.status})`);
+    const found=await this.fetcher(url,{redirect:'error',signal:AbortSignal.timeout(25000)});if(found.ok){existing=verifyServiceTransaction(await found.json(),{chainId:op.chainId,safe:op.safe,nonce:m.nonce,hash:op.safeTxHash},normalizeSigning);}else if(found.status!==404)throw Error(`Proposal lookup failed (${found.status})`);
+    await assertReview();
     const first=sigs[0];
-    if(!existing){const payload={...m,nonce:Number(m.nonce),safeTxGas:Number(m.safeTxGas),baseGas:Number(m.baseGas),contractTransactionHash:op.safeTxHash,sender:first.sender,signature:first.signature,origin:'SafeDesk'};for(const k of ['nonce','safeTxGas','baseGas'])if(!Number.isSafeInteger(payload[k]))throw Error('Unsafe numeric field');await this.post(`${op.service}/api/v1/safes/${op.safe}/multisig-transactions/`,payload);existing=await this.json(url);}
-    const confirmed=new Set((existing.confirmations||[]).map(c=>c.owner.toLowerCase()));
-    for(const sig of sigs)if(!confirmed.has(sig.sender.toLowerCase()))await this.post(`${url}confirmations/`,{signature:sig.signature});
-    result={status:'proposed',safeTxHash:op.safeTxHash,at:new Date().toISOString(),safeUrl:`https://app.safe.global/transactions/queue?safe=${CHAINS[op.chainId].short}:${op.safe}`};
+    if(!existing){const payload={...m,nonce:Number(m.nonce),safeTxGas:Number(m.safeTxGas),baseGas:Number(m.baseGas),contractTransactionHash:op.safeTxHash,sender:first.sender,signature:first.signature,origin:'SafeDesk'};for(const k of ['nonce','safeTxGas','baseGas'])if(!Number.isSafeInteger(payload[k]))throw Error('Unsafe numeric field');await assertReview();await this.post(`${op.service}/api/v1/safes/${op.safe}/multisig-transactions/`,payload);existing=verifyServiceTransaction(await this.json(url),{chainId:op.chainId,safe:op.safe,nonce:m.nonce,hash:op.safeTxHash},normalizeSigning);}
+    const confirmed=new Set();for(const c of existing.confirmations){try{confirmed.add(recoverSignature(op.signing,c.owner,c.signature).sender.toLowerCase());}catch{ /* Service counts alone are not approval evidence. */ }}
+    for(const sig of sigs)if(!confirmed.has(sig.sender.toLowerCase())){await assertReview();await this.post(`${url}confirmations/`,{signature:sig.signature});}
+    result={status:'proposed',safeTxHash:op.safeTxHash,at:new Date().toISOString(),safeUrl:`${Number(op.chainId)===60808?'https://safe.gobob.xyz':'https://app.safe.global'}/transactions/queue?safe=${CHAINS[op.chainId].short}:${op.safe}`};
    }catch(e){result={status:'needs-check',message:e.message,safeTxHash:op.safeTxHash,at:new Date().toISOString()};}
    this.state.results[id]=result;this.save();results.push({id,...result});
    // A network failure may follow an accepted POST. Preserve progress and stop for reconciliation.
@@ -145,5 +153,5 @@ export class BatchStore{
   }
   return results;
  }
- async post(url,data){const r=await this.fetcher(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data),signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error(`Safe service rejected submission (${r.status})`);}
+ async post(url,data){const r=await this.fetcher(url,{method:'POST',redirect:'error',headers:{'content-type':'application/json'},body:JSON.stringify(data),signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error(`Safe service rejected submission (${r.status})`);}
 }

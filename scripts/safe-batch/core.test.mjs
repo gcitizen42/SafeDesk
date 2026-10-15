@@ -24,7 +24,7 @@ function fixture(){
   }
   if(url.includes('?executed='))return result({results:state.queue,next:null});
   if(opt.method==='POST'){state.existing=true;if(state.failAfterAcceptance){state.failAfterAcceptance=false;throw Error('Connection lost after acceptance');}return new Response('',{status:201});}
-  return state.existing?result({isExecuted:false,confirmations:[{owner:wallet.address}]}):result({},404);
+  return state.existing?result({safe:signing.domain.verifyingContract,...signing.message,safeTxHash:signing.safeTxHash,isExecuted:false,confirmations:[{owner:wallet.address,signature:typed}]}):result({},404);
  };
  return{root,calls,state,store:new BatchStore(root,{fetcher})};
 }
@@ -50,7 +50,7 @@ test('collect persists privately, deduplicates signer and permits one-signature 
  const f=fixture();await f.store.collect('fixture',wallet.address,typed);await f.store.collect('fixture',wallet.address,raw);assert.equal(f.store.export().operations[0].signatures.length,1);
  if(process.platform!=='win32')assert.equal(fs.statSync(path.join(f.root,'secrets/batch-state.json')).mode&0o777,0o600);
  assert.equal(f.store.list()[0].signatures.length,1);assert.equal(f.store.list()[0].signatures[0].signature,undefined);
- assert.equal((await f.store.propose(['fixture']))[0].status,'proposed');assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.url.includes('rpc.gobob')).length,1);
+ assert.equal((await f.store.propose(['fixture'],{confirm:'PROPOSE'}))[0].status,'proposed');assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.url.includes('rpc.gobob')).length,1);
 });
 test('the signing dropdown method is enforced before chain calls and never silently falls back',async()=>{
  const f=fixture();await assert.rejects(f.store.collect('fixture',wallet.address,raw,'eip712'),/selected signing method/);await assert.rejects(f.store.collect('fixture',wallet.address,typed,'eth_sign'),/selected signing method/);assert.equal(f.calls.length,0);assert.equal(f.store.state.signatures.length,0);
@@ -58,7 +58,8 @@ test('the signing dropdown method is enforced before chain calls and never silen
 });
 test('stale nonce, draft or conflicting queue block collection and publication',async()=>{
  const f=fixture();f.state.nonce=12;await assert.rejects(f.store.collect('fixture',wallet.address,typed),/changed/);assert.equal(f.store.state.signatures.length,0);f.state.nonce=11;
- f.state.queue=[{nonce:11,safeTxHash:ethers.ZeroHash}];await assert.rejects(f.store.check('fixture'),/Another/);f.state.queue=[];
+ const competing=normalizeSigning({...signing,safeTxHash:undefined,message:{...signing.message,value:'1'}});
+ f.state.queue=[{safe:signing.domain.verifyingContract,...competing.message,safeTxHash:competing.safeTxHash,isExecuted:false,confirmations:[]}];await assert.rejects(f.store.check('fixture'),/Another/);f.state.queue=[];
  const file=path.join(f.root,'fixture/operation.json'),op=JSON.parse(fs.readFileSync(file));op.draft=true;fs.writeFileSync(file,JSON.stringify(op));await assert.rejects(f.store.collect('fixture',wallet.address,typed),/decision/);
  assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.url.includes('rpc.gobob')).length,0);
 });
@@ -67,9 +68,9 @@ test('restart preserves collection; collection for another hash cannot be import
 });
 test('two owners publish one proposal plus one confirmation; rerun does not repropose',async()=>{
  const f=fixture();await f.store.collect('fixture',wallet.address,typed);await f.store.collect('fixture',second.address,await second.signTypedData(signing.domain,signing.types,signing.message));
- await f.store.propose(['fixture']);const posts=f.calls.filter(x=>x.method==='POST'&&!x.url.includes('rpc.gobob'));
+ await f.store.propose(['fixture'],{confirm:'PROPOSE'});const posts=f.calls.filter(x=>x.method==='POST'&&!x.url.includes('rpc.gobob'));
  assert.equal(posts.length,2);assert.ok(posts[1].url.endsWith('/confirmations/'));assert.equal(posts[0].body.contractTransactionHash,signing.safeTxHash);
- await f.store.propose(['fixture']);assert.equal(f.calls.filter(x=>x.method==='POST'&&x.url.includes('/safes/')).length,1);
+ await f.store.propose(['fixture'],{confirm:'PROPOSE'});assert.equal(f.calls.filter(x=>x.method==='POST'&&x.url.includes('/safes/')).length,1);
 });
 test('ambiguous submission records progress and stops the batch; retry reconciles existing proposal',async()=>{
  const f=fixture();await f.store.collect('fixture',wallet.address,typed);
@@ -78,8 +79,8 @@ test('ambiguous submission records progress and stops the batch; retry reconcile
  fs.writeFileSync(path.join(f.root,'batch.json'),JSON.stringify({operations:[{id:'fixture'},{id:'other'}]}));
  f.store.state.signatures.push({id:'other',chainId:60808,safe:other.domain.verifyingContract,safeTxHash:other.safeTxHash,sender:wallet.address,signature:await wallet.signTypedData(other.domain,other.types,other.message)});f.store.save();
  const original=f.store.rpc.bind(f.store);f.store.rpc=async(op,method,params)=>method==='eth_call'&&SAFE_ABI.parseTransaction({data:params[0].data}).name==='getTransactionHash'?SAFE_ABI.encodeFunctionResult('getTransactionHash',[op.safeTxHash]):original(op,method,params);
- f.state.failAfterAcceptance=true;const results=await f.store.propose(['fixture','other']);assert.equal(results.length,1);assert.equal(results[0].status,'needs-check');assert.equal(f.store.state.results.other,undefined);assert.equal(new BatchStore(f.root,{fetcher:f.store.fetcher}).list()[0].result.status,'needs-check');
- assert.equal((await f.store.propose(['fixture']))[0].status,'proposed');assert.equal(f.calls.filter(x=>x.method==='POST'&&x.url.includes('/safes/')).length,1);
+ f.state.failAfterAcceptance=true;const results=await f.store.propose(['fixture','other'],{confirm:'PROPOSE'});assert.equal(results.length,1);assert.equal(results[0].status,'needs-check');assert.equal(f.store.state.results.other,undefined);assert.equal(new BatchStore(f.root,{fetcher:f.store.fetcher}).list()[0].result.status,'needs-check');
+ assert.equal((await f.store.propose(['fixture'],{confirm:'PROPOSE'}))[0].status,'proposed');assert.equal(f.calls.filter(x=>x.method==='POST'&&x.url.includes('/safes/')).length,1);
 });
 test('UI and CLI writers are serialized and reread saved collection before changes',async()=>{
  const f=fixture(),other=new BatchStore(f.root,{fetcher:f.store.fetcher});
@@ -106,4 +107,80 @@ test('HTTP rejects cross-origin mutation, missing session token and secret file 
   assert.equal((await fetch(base+'/api/export')).status,403);
   const init=await fetch(base+'/api/batch').then(r=>r.json());assert.equal((await fetch(base+'/api/export',{headers:{'x-batch-token':init.token}})).status,200);assert.equal((await fetch(base+'/api/check',{method:'POST',headers:{'content-type':'application/json','x-batch-token':init.token},body:JSON.stringify({id:'fixture'})})).status,200);
  }finally{await new Promise(r=>server.close(r));}
+});
+
+function reviewedReplacement(f) {
+ const competitor=normalizeSigning({...signing,safeTxHash:undefined,message:{...signing.message,value:'1'}});
+ f.state.queue=[{safe:signing.domain.verifyingContract,...competitor.message,safeTxHash:competitor.safeTxHash,isExecuted:false,confirmations:[]}];
+ const file=path.join(f.root,'fixture/operation.json'),op=JSON.parse(fs.readFileSync(file));
+ fs.writeFileSync(file,JSON.stringify({...op,replaces:[competitor.safeTxHash]}));
+ return competitor;
+}
+test('reviewed replacement signs/proposes only with matching simulation and explicit PROPOSE, and review includes conflicts',async()=>{
+ const f=fixture(),competitor=reviewedReplacement(f);
+ await f.store.collect('fixture',wallet.address,typed);
+ const reviewed=await f.store.review(['fixture']);assert.deepEqual(reviewed[0].replaces,[competitor.safeTxHash]);assert.deepEqual(reviewed[0].competingHashes,[competitor.safeTxHash]);
+ await assert.rejects(f.store.propose(['fixture']),/PROPOSE/);await assert.rejects(f.store.propose(['fixture'],{confirm:'REPLACE'}),/PROPOSE/);
+ assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.body?.jsonrpc).length,0);
+ assert.equal((await f.store.propose(['fixture'],{confirm:'PROPOSE',reviewed}))[0].status,'proposed');
+ assert.equal(f.calls.filter(x=>x.method==='POST'&&x.url.includes('/safes/')).length,1);
+ fs.unlinkSync(path.join(f.root,'fixture/local-simulation.json'));await assert.rejects(f.store.check('fixture',{ready:true}),/simulation/);
+});
+test('stale reviewed conflict disappearance and new unreviewed arrivals never publish',async()=>{
+ const f=fixture(),competitor=reviewedReplacement(f);await f.store.collect('fixture',wallet.address,typed);
+ const reviewed=await f.store.review(['fixture']);f.state.queue=[];
+ await assert.rejects(f.store.propose(['fixture'],{confirm:'PROPOSE',reviewed}),/Review changed/);
+ f.state.queue=[{safe:signing.domain.verifyingContract,...competitor.message,safeTxHash:competitor.safeTxHash,isExecuted:false,confirmations:[]}];
+ const original=f.store.fetcher;f.store.fetcher=async(url,options)=>{const result=await original(url,options);if(url.endsWith(`/multisig-transactions/${signing.safeTxHash}/`))f.state.queue=[];return result;};
+ const raced=await f.store.propose(['fixture'],{confirm:'PROPOSE',reviewed});assert.equal(raced[0].status,'needs-check');assert.match(raced[0].message,/Review changed/);
+ assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.body?.jsonrpc).length,0);
+});
+test('an already-published exact candidate is reconciled without proposal POST; owner metadata alone is not approval proof',async()=>{
+ const f=fixture();await f.store.collect('fixture',wallet.address,typed);f.state.existing=true;
+ assert.equal((await f.store.propose(['fixture'],{confirm:'PROPOSE'}))[0].status,'proposed');assert.equal(f.calls.filter(x=>x.method==='POST'&&!x.body?.jsonrpc).length,0);
+ const original=f.store.fetcher;f.store.fetcher=async(url,options)=>{
+  if(url.endsWith(`/multisig-transactions/${signing.safeTxHash}/`)&&options?.method!=='POST')return Response.json({safe:signing.domain.verifyingContract,...signing.message,safeTxHash:signing.safeTxHash,isExecuted:false,confirmations:[{owner:wallet.address}]});
+  return original(url,options);
+ };
+ await f.store.propose(['fixture'],{confirm:'PROPOSE'});assert.equal(f.calls.filter(x=>x.method==='POST'&&x.url.endsWith('/confirmations/')).length,1);
+});
+test('local same-nonce conflicts also require explicit recorded hashes and survive replacement preparation',async()=>{
+ const f=fixture(),competitor=normalizeSigning({...signing,safeTxHash:undefined,message:{...signing.message,value:'1'}}),dir=path.join(f.root,'older');fs.mkdirSync(dir);
+ for(const[name,data]of Object.entries({'operation.json':{id:'older',chainId:60808,safe:signing.domain.verifyingContract,safeTxHash:competitor.safeTxHash,threshold:2,newOwners:[wallet.address,second.address]},'signing-data.json':competitor,'current-owners.json':{owners:[wallet.address,second.address],threshold:2,nonce:11}}))fs.writeFileSync(path.join(dir,name),JSON.stringify(data));
+ fs.writeFileSync(path.join(f.root,'batch.json'),JSON.stringify({operations:[{id:'fixture'},{id:'older'}]}));
+ await assert.rejects(f.store.check('fixture'),/locally prepared/);
+ const file=path.join(f.root,'fixture/operation.json'),op=JSON.parse(fs.readFileSync(file));fs.writeFileSync(file,JSON.stringify({...op,replaces:[competitor.safeTxHash]}));
+ const live=await f.store.check('fixture',{ready:true});assert.deepEqual(live.conflictingHashes,[competitor.safeTxHash]);assert.deepEqual(live.reviewedConflicts[0].localIds,['older']);
+ assert.equal(fs.existsSync(dir),true);
+});
+
+test('Ethereum proposal lookup, queue, proposal and confirmation URLs retain the canonical service prefix without redirects',async()=>{
+ const f=fixture(),ethereum=normalizeSigning({...signing,safeTxHash:undefined,domain:{...signing.domain,chainId:1}});
+ const opFile=path.join(f.root,'fixture/operation.json'),op=JSON.parse(fs.readFileSync(opFile));
+ fs.writeFileSync(opFile,JSON.stringify({...op,chainId:1,safeTxHash:ethereum.safeTxHash}));
+ fs.writeFileSync(path.join(f.root,'fixture/signing-data.json'),JSON.stringify(ethereum));
+ fs.writeFileSync(path.join(f.root,'fixture/local-simulation.json'),JSON.stringify({status:'PASSED',safeTxHash:ethereum.safeTxHash}));
+ const original=f.store.fetcher,requests=[];let existing=false;
+ f.store.fetcher=async(url,options={})=>{
+  requests.push({url,options});const body=options.body?JSON.parse(options.body):null;
+  if(body?.jsonrpc) {
+   if(body.method==='eth_chainId')return Response.json({result:'0x1'});
+   if(body.method==='eth_call'&&SAFE_ABI.parseTransaction({data:body.params[0].data}).name==='getTransactionHash')return Response.json({result:SAFE_ABI.encodeFunctionResult('getTransactionHash',[ethereum.safeTxHash])});
+   return original('https://rpc.gobob.xyz',options);
+  }
+  if(url.includes('?executed='))return Response.json({results:[],next:null});
+  if(options.method==='POST'){existing=true;return new Response('',{status:201});}
+  return existing?Response.json({safe:ethereum.domain.verifyingContract,...ethereum.message,safeTxHash:ethereum.safeTxHash,isExecuted:false,
+   confirmations:[{owner:wallet.address,signature:await wallet.signTypedData(ethereum.domain,ethereum.types,ethereum.message)}]}):new Response('',{status:404});
+ };
+ await f.store.collect('fixture',wallet.address,await wallet.signTypedData(ethereum.domain,ethereum.types,ethereum.message));
+ await f.store.collect('fixture',second.address,await second.signTypedData(ethereum.domain,ethereum.types,ethereum.message));
+ assert.equal((await f.store.propose(['fixture'],{confirm:'PROPOSE'}))[0].status,'proposed');
+ const serviceRequests=requests.filter(x=>x.url.startsWith('https://api.safe.global/'));
+ const base='https://api.safe.global/tx-service/eth/api/v1';
+ assert.ok(serviceRequests.every(x=>x.url.startsWith(base+'/')&&x.options.redirect==='error'));
+ assert.ok(serviceRequests.some(x=>x.url===`${base}/multisig-transactions/${ethereum.safeTxHash}/`&&x.options.method!=='POST'));
+ assert.ok(serviceRequests.some(x=>x.url===`${base}/safes/${ethereum.domain.verifyingContract}/multisig-transactions/`&&x.options.method==='POST'));
+ assert.ok(serviceRequests.some(x=>x.url===`${base}/multisig-transactions/${ethereum.safeTxHash}/confirmations/`&&x.options.method==='POST'));
+ assert.ok(serviceRequests.some(x=>x.url.startsWith(`${base}/safes/${ethereum.domain.verifyingContract}/multisig-transactions/?`)));
 });

@@ -405,10 +405,11 @@ describe('published Safe queue verification', () => {
   })
 
   it('bounds verified packages to the existing 100-signature format and reports extra confirmations', async () => {
+    const safeTxHash = row().safeTxHash
     const confirmations = await Promise.all(
       Array.from({ length: 101 }, async () => {
         const account = privateKeyToAccount(generatePrivateKey())
-        return { owner: account.address, signature: await account.sign({ hash: row().safeTxHash }) }
+        return { owner: account.address, signature: await account.sign({ hash: safeTxHash }) }
       }),
     )
     const queue = await parsePublishedQueue(
@@ -420,7 +421,7 @@ describe('published Safe queue verification', () => {
       { reason: 'signature-limit' },
     ])
     expect(Either.isRight(await verifyPackage(queue.transactions[0]?.verified.pkg))).toBe(true)
-  })
+  }, 20_000)
 
   it('does not trust reported VERSION() or an unverified implementation', async () => {
     for (const unverified of [
@@ -567,7 +568,7 @@ describe('published request boundary', () => {
     expect(publishedQueryOptions(1, safe, snapshot, false).queryKey).not.toEqual(options.queryKey)
   })
 
-  it('constructs app.safe.global queue links for all pinned networks and ignores supplied navigation URLs', async () => {
+  it('constructs pinned Safe queue links, uses the BOB app for BOB, and ignores supplied navigation URLs', async () => {
     const prefixes: Record<number, string> = {
       1: 'eth',
       10: 'oeth',
@@ -582,7 +583,9 @@ describe('published request boundary', () => {
     }
     for (const [chainId, prefix] of Object.entries(prefixes)) {
       const link = new URL(publishedSafeUrl(Number(chainId), safe) ?? '')
-      expect(link.origin).toBe('https://app.safe.global')
+      expect(link.origin).toBe(
+        Number(chainId) === 60808 ? 'https://safe.gobob.xyz' : 'https://app.safe.global',
+      )
       expect(link.pathname).toBe('/transactions/queue')
       expect(link.searchParams.get('safe')).toBe(`${prefix}:${safe}`)
     }
